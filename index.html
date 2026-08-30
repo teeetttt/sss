@@ -413,205 +413,405 @@
     function getValidMoves(r, c, b, t) {
       const p = b[r][c]; if(!p || p.player!==t) return [];
       const m = [], dirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
-      for(let i=0; i<dirs.length; i++) {
-        const nr=r+dirs[i][0], nc=c+dirs[i][1];
+      for(let i=0; i<8; i++) {
+        const dr=dirs[i][0], dc=dirs[i][1], nr=r+dr, nc=c+dc;
         if(nr>=0 && nr<9 && nc>=0 && nc<9) {
           const tgt=b[nr][nc];
-          if(!tgt) m.push({r:nr, c:nc});
-          else if(tgt.player!==t && canEat(p.type, tgt.type)) m.push({r:nr, c:nc});
+          if(!tgt) m.push({r:nr,c:nc});
+          else if(tgt.player!==t && canEat(p.type,tgt.type)) m.push({r:nr,c:nc});
           else if(tgt.player===t) {
-            const jr=r+dirs[i][0]*2, jc=c+dirs[i][1]*2;
+            const jr=r+dr*2, jc=c+dc*2;
             if(jr>=0 && jr<9 && jc>=0 && jc<9) {
               const jt=b[jr][jc];
-              if(!jt || (jt.player!==t && canEat(p.type, jt.type))) m.push({r:jr, c:jc});
+              if(!jt || (jt.player!==t && canEat(p.type,jt.type))) m.push({r:jr,c:jc});
             }
           }
         }
-      } return m;
+      }
+      return m;
     }
 
     function getValidDropPositions(t, b) {
-      const d = [], rows = t==='blue' ? [5,6,7,8] : [0,1,2,3];
-      for(let i=0; i<rows.length; i++) for(let c=0; c<9; c++) if(!b[rows[i]][c]) d.push({r:rows[i], c});
+      const d=[], rows=t==='blue'?[5,6,7,8]:[0,1,2,3];
+      for(let i=0;i<4;i++) for(let c=0;c<9;c++) if(!b[rows[i]][c]) d.push({r:rows[i],c});
       return d;
     }
 
     function getAllPossibleActions(p, b, h) {
-      const a = [];
-      for(let r=0; r<9; r++) for(let c=0; c<9; c++) if(b[r][c] && b[r][c].player===p) {
-        const m = getValidMoves(r, c, b, p);
-        for(let i=0; i<m.length; i++) a.push({type:'move', from:{r,c}, to:m[i]});
+      const a=[];
+      for(let r=0;r<9;r++) for(let c=0;c<9;c++) {
+        if(b[r][c] && b[r][c].player===p) {
+          const m=getValidMoves(r,c,b,p);
+          for(let i=0;i<m.length;i++) a.push({type:'move',from:{r:r,c:c},to:m[i]});
+        }
       }
       if(h[p].length>0) {
-        const d = getValidDropPositions(p, b), u = Array.from(new Set(h[p]));
-        for(let i=0; i<u.length; i++) for(let j=0; j<d.length; j++) a.push({type:'drop', pieceType:u[i], to:d[j]});
+        const d=getValidDropPositions(p,b), u=Array.from(new Set(h[p]));
+        for(let i=0;i<u.length;i++) for(let j=0;j<d.length;j++)
+          a.push({type:'drop',pieceType:u[i],to:d[j]});
       }
       return a;
     }
 
-    function applyAction(act, p, b, h) {
-      const nb = cloneBoard(b), nh = cloneHands(h);
-      let captured = null;
+    function applyAction(act,p,b,h) {
+      const nb=cloneBoard(b), nh=cloneHands(h);
+      let captured=null;
       if(act.type==='move') {
-        captured = nb[act.to.r][act.to.c];
+        captured=nb[act.to.r][act.to.c];
         if(captured) nh[p].push(captured.type);
-        nb[act.to.r][act.to.c] = nb[act.from.r][act.from.c];
-        nb[act.from.r][act.from.c] = null;
+        nb[act.to.r][act.to.c]=nb[act.from.r][act.from.c];
+        nb[act.from.r][act.from.c]=null;
       } else {
-        nb[act.to.r][act.to.c] = {player:p, type:act.pieceType};
-        nh[p].splice(nh[p].indexOf(act.pieceType), 1);
+        nb[act.to.r][act.to.c]={player:p,type:act.pieceType};
+        const idx=nh[p].indexOf(act.pieceType);
+        if(idx>=0) nh[p].splice(idx,1);
       }
-      return {newBoard:nb, newHands:nh, captured};
+      return {newBoard:nb,newHands:nh,captured:captured};
     }
 
-    const WIN_SCORE = 10000000;
-    function evaluateState(b, h, ai) {
-      const opp = ai==='blue' ? 'red':'blue', aiG = ai==='blue' ? 0:8, oppG = opp==='blue' ? 0:8;
+    const WIN_SCORE=10000000;
+    const MAX_TT_ENTRIES=120000;
+    const transpositionTable=new Map();
+    const killerMoves=new Array(32);
+    const historyHeuristic=new Map();
+    let searchStart=0;
+
+    function noteKiller(depth, key) {
+      if(!killerMoves[depth]) killerMoves[depth]=[];
+      const a=killerMoves[depth];
+      if(a[0]!==key) { a.unshift(key); if(a.length>2) a.pop(); }
+    }
+    function noteHistory(p, key, depth) {
+      const k=p+'|'+key;
+      historyHeuristic.set(k, Math.min(1000000, (historyHeuristic.get(k)||0)+depth*depth));
+    }
+
+    function evaluateState(b,h,ai) {
+      const opp=ai==='blue'?'red':'blue', aiG=ai==='blue'?0:8, oppG=opp==='blue'?0:8;
       const dirs=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
-      let s = 0;
+      const types=['rock','paper','scissors'];
+      let s=0;
 
-      for(let r=0; r<9; r++) {
-        for(let c=0; c<9; c++) {
-          const p = b[r][c]; if(!p) continue;
-          const isAI = (p.player === ai);
-          const goal = isAI ? aiG : oppG;
-          const dist = Math.abs(r - goal);
-          
-          if(dist === 0) return isAI ? WIN_SCORE : -WIN_SCORE;
-
-          let val = 500 + (8 - dist) * 75 + (8 - dist) * (8 - dist) * 15;
-          let hasProtection = false;
-          let isThreatened = false;
-
-          for(let i=0; i<8; i++) {
-            const nr = r + dirs[i][0], nc = c + dirs[i][1];
-            if(nr>=0 && nr<9 && nc>=0 && nc<9) {
-              const neighbor = b[nr][nc];
-              if(neighbor) {
-                if(neighbor.player === p.player) {
-                  hasProtection = true;
-                } else {
-                  if(canEat(neighbor.type, p.type)) isThreatened = true;
-                }
-              }
-            }
+      function inside(r,c){ return r>=0&&r<9&&c>=0&&c<9; }
+      function countMobility(r,c,p){ return (getValidMoves(r,c,b,p)||[]).length; }
+      function tactical(r,c,p){
+        let support=0, pressure=0, danger=0;
+        for(const [dr,dc] of dirs){
+          const nr=r+dr,nc=c+dc; if(!inside(nr,nc)) continue;
+          const q=b[nr][nc]; if(!q) continue;
+          if(q.player===p.player) support++;
+          else {
+            if(canEat(q.type,p.type)) danger++;
+            if(canEat(p.type,q.type)) pressure++;
           }
-
-          if(hasProtection) val += 80;
-          if(isThreatened) val -= 220;
-
-          if(isAI) s += val;
-          else s -= val;
         }
+        return {support,pressure,danger};
       }
 
-      s += h[ai].length * 120 - h[opp].length * 120;
+      for(let r=0;r<9;r++) for(let c=0;c<9;c++) {
+        const p=b[r][c]; if(!p) continue;
+        const isAI=p.player===ai, goal=isAI?aiG:oppG, dist=Math.abs(r-goal);
+        if(dist===0) return isAI?WIN_SCORE:-WIN_SCORE;
+
+        // Non-linear progress: reaching the last few ranks matters much more.
+        let val=420+(8-dist)*105+(8-dist)*(8-dist)*24;
+        if(dist===1) val+=2600;
+        else if(dist===2) val+=650;
+
+        const t=tactical(r,c,p);
+        const mob=Math.min(countMobility(r,c,p),8);
+        val += t.support*52;
+        val += t.pressure*78;
+        val -= t.danger*155;
+        val += mob*20;
+
+        // Central files give slightly more routing flexibility.
+        val += (4-Math.abs(c-4))*14;
+
+        if(isAI) s+=val; else s-=val;
+      }
+
+      function handValue(player){
+        const counts={rock:0,paper:0,scissors:0};
+        for(const t of h[player]) counts[t]++;
+        let v=h[player].length*88;
+        v += Object.values(counts).filter(x=>x>0).length*70;
+        // A reserve counter to an opponent's piece type is strategically useful.
+        for(const t of types){
+          const counter=t==='rock'?'paper':t==='paper'?'scissors':'rock';
+          const enemy=h[player===ai?opp:ai].filter(x=>x===t).length;
+          v += Math.min(counts[counter],enemy)*38;
+        }
+        return v;
+      }
+      s += handValue(ai)-handValue(opp);
+
+      function goalPressure(player){
+        const goal=player==='blue'?0:8;
+        let v=0;
+        for(let r=0;r<9;r++) for(let c=0;c<9;c++) {
+          const p=b[r][c]; if(!p||p.player!==player) continue;
+          const d=Math.abs(r-goal);
+          if(d===1) v+=900; else if(d===2) v+=240;
+          const moves=getValidMoves(r,c,b,player)||[];
+          for(const m of moves){
+            if(m.r===goal) v+=1900;
+            else if(Math.abs(m.r-goal)===1) v+=150;
+          }
+        }
+        return v;
+      }
+      s += goalPressure(ai)-goalPressure(opp);
       return s;
     }
 
-    let searchStart = 0;
-    const transpositionTable = new Map();
+    function stateKey(b,h,p,d,isMax) {
+      let k=isMax?'M':'m';
+      k+='|'+p+'|'+d+'|';
+      for(let r=0;r<9;r++) for(let c=0;c<9;c++) {
+        const x=b[r][c];
+        k+=x ? (x.player==='blue'?'B':'R')+(x.type==='scissors'?'S':x.type==='rock'?'K':'P') : '..';
+      }
+      k+='|B'+h.blue.slice().sort().map(x=>x[0]).join('');
+      k+='|R'+h.red.slice().sort().map(x=>x[0]).join('');
+      return k;
+    }
 
-    function scoreAction(act, b, p, pv) {
-      if(pv && act.type===pv.type && act.to.r===pv.to.r && act.to.c===pv.to.c && ((act.type==='move'&&act.from.r===pv.from.r&&act.from.c===pv.from.c)||(act.pieceType===pv.pieceType))) return 1e9;
-      const o = p==='blue'?'red':'blue', g = p==='blue'?0:8;
-      if(act.to.r === g) return 5e7;
+    function actionKey(a) {
+      if(a.type==='move') return 'm'+a.from.r+a.from.c+a.to.r+a.to.c;
+      return 'd'+a.pieceType[0]+a.to.r+a.to.c;
+    }
+
+    function scoreAction(act,b,p,pv) {
+      let score=0;
+      if(pv && actionKey(act)===actionKey(pv)) score+=1000000000;
+
+      const o=p==='blue'?'red':'blue', g=p==='blue'?0:8;
+      if(act.to.r===g) score+=50000000;
+
       if(act.type==='move') {
-        const tgt = b[act.to.r][act.to.c];
-        if(tgt && tgt.player === o) return 1e7;
-        return (8 - Math.abs(act.to.r - g)) * 100;
-      }
-      return 1000;
-    }
-
-    function quiescence(b, h, alpha, beta, isMax, ai, qDepth) {
-      const evalVal = evaluateState(b, h, ai);
-      if(qDepth <= 0) return evalVal;
-      if(isMax) {
-        if(evalVal >= beta) return beta;
-        if(evalVal > alpha) alpha = evalVal;
-      } else {
-        if(evalVal <= alpha) return alpha;
-        if(evalVal < beta) beta = evalVal;
-      }
-      return evalVal;
-    }
-
-    function minimax(b, h, d, alpha, beta, isMax, ai) {
-      if(Date.now() - searchStart > 4500) throw new Error('TO');
-      
-      const p = isMax ? ai : (ai==='blue'?'red':'blue');
-      const acts = getAllPossibleActions(p, b, h);
-      const g = p==='blue' ? 0 : 8;
-
-      if(d === 0 || acts.length === 0) {
-        return quiescence(b, h, alpha, beta, isMax, ai, 2);
-      }
-
-      acts.sort((x, y) => scoreAction(y, b, p, null) - scoreAction(x, b, p, null));
-
-      if(isMax) {
-        let max = -Infinity;
-        for(let i=0; i<acts.length; i++) {
-          if(acts[i].to.r === g) return WIN_SCORE + d;
-          const {newBoard, newHands} = applyAction(acts[i], p, b, h);
-          const v = minimax(newBoard, newHands, d-1, alpha, beta, false, ai);
-          if(v > max) max = v;
-          if(v > alpha) alpha = v;
-          if(beta <= alpha) break;
+        const tgt=b[act.to.r][act.to.c];
+        if(tgt && tgt.player===o) {
+          score+=10000000;
+          if(canEat(tgt.type, b[act.from.r][act.from.c].type)) score+=500000;
         }
-        return max;
+        score+=(8-Math.abs(act.to.r-g))*100;
       } else {
-        let min = Infinity;
-        for(let i=0; i<acts.length; i++) {
-          if(acts[i].to.r === g) return -WIN_SCORE - d;
-          const {newBoard, newHands} = applyAction(acts[i], p, b, h);
-          const v = minimax(newBoard, newHands, d-1, alpha, beta, true, ai);
-          if(v < min) min = v;
-          if(v < beta) beta = v;
-          if(beta <= alpha) break;
+        score+=1000;
+        if(act.to.r===g) score+=50000000;
+      }
+      return score;
+    }
+
+    function orderActions(acts,b,p,pv,ttBestKey,depth) {
+      acts.sort(function(a,c) {
+        let sa=scoreAction(a,b,p,pv), sc=scoreAction(c,b,p,pv);
+        const ak=actionKey(a), ck=actionKey(c);
+        sa += historyHeuristic.get(p+'|'+ak)||0;
+        sc += historyHeuristic.get(p+'|'+ck)||0;
+        if(depth!==undefined && killerMoves[depth]) {
+          if(killerMoves[depth][0]===ak) sa+=3000000; else if(killerMoves[depth][1]===ak) sa+=1500000;
+          if(killerMoves[depth][0]===ck) sc+=3000000; else if(killerMoves[depth][1]===ck) sc+=1500000;
         }
-        return min;
+        if(ttBestKey) {
+          if(actionKey(a)===ttBestKey) sa+=900000000;
+          if(actionKey(c)===ttBestKey) sc+=900000000;
+        }
+        return sc-sa;
+      });
+      return acts;
+    }
+
+    function quiescence(b,h,alpha,beta,isMax,ai,qDepth) {
+      if(Date.now()-searchStart>4500) throw new Error('TO');
+
+      const standPat=evaluateState(b,h,ai);
+      if(qDepth<=0) return standPat;
+
+      if(isMax) {
+        if(standPat>=beta) return standPat;
+        if(standPat>alpha) alpha=standPat;
+      } else {
+        if(standPat<=alpha) return standPat;
+        if(standPat<beta) beta=standPat;
+      }
+
+      const p=isMax?ai:(ai==='blue'?'red':'blue');
+      const all=getAllPossibleActions(p,b,h);
+      const captures=[];
+      for(let i=0;i<all.length;i++) {
+        if(all[i].type==='move' && b[all[i].to.r][all[i].to.c]) captures.push(all[i]);
+      }
+      if(captures.length===0) return standPat;
+      orderActions(captures,b,p,null,null);
+
+      if(isMax) {
+        let best=standPat;
+        for(let i=0;i<captures.length;i++) {
+          const x=applyAction(captures[i],p,b,h);
+          const v=quiescence(x.newBoard,x.newHands,alpha,beta,false,ai,qDepth-1);
+          if(v>best) best=v;
+          if(v>alpha) alpha=v;
+          if(beta<=alpha) break;
+        }
+        return best;
+      } else {
+        let best=standPat;
+        for(let i=0;i<captures.length;i++) {
+          const x=applyAction(captures[i],p,b,h);
+          const v=quiescence(x.newBoard,x.newHands,alpha,beta,true,ai,qDepth-1);
+          if(v<best) best=v;
+          if(v<beta) beta=v;
+          if(beta<=alpha) break;
+        }
+        return best;
       }
     }
 
-    self.onmessage = function(e) {
-      const {board, hands, aiPlayer} = e.data;
-      const acts = getAllPossibleActions(aiPlayer, board, hands);
-      if(acts.length === 0) return self.postMessage({bestAction:null});
-
-      for(let i=acts.length-1; i>0; i--) {
-        const j = Math.floor(Math.random()*(i+1));
-        [acts[i], acts[j]] = [acts[j], acts[i]];
+    function minimax(b,h,d,alpha,beta,isMax,ai) {
+      if(Date.now()-searchStart>4500) throw new Error('TO');
+      const p=isMax?ai:(ai==='blue'?'red':'blue');
+      const key=stateKey(b,h,p,d,isMax);
+      const alphaOrig=alpha, betaOrig=beta;
+      const cached=transpositionTable.get(key);
+      if(cached && cached.depth>=d) {
+        if(cached.flag==='EXACT') return cached.value;
+        if(cached.flag==='LOWER') alpha=Math.max(alpha,cached.value);
+        else if(cached.flag==='UPPER') beta=Math.min(beta,cached.value);
+        if(alpha>=beta) return cached.value;
       }
 
-      for(let i=0; i<acts.length; i++) {
-        if(acts[i].to.r === (aiPlayer==='blue'?0:8)) return self.postMessage({bestAction:acts[i]});
+      const acts=getAllPossibleActions(p,b,h), g=p==='blue'?0:8;
+      if(acts.length===0) {
+        const terminal=isMax ? -WIN_SCORE-d : WIN_SCORE+d;
+        transpositionTable.set(key,{value:terminal,depth:d,flag:'EXACT'});
+        return terminal;
+      }
+      if(d===0) return quiescence(b,h,alpha,beta,isMax,ai,2);
+      orderActions(acts,b,p,null,cached&&cached.bestKey?cached.bestKey:null,d);
+
+      let best=isMax?-Infinity:Infinity, bestKey=null, searched=0;
+      for(let i=0;i<acts.length;i++) {
+        const act=acts[i], ak=actionKey(act);
+        if(act.to.r===g) {
+          best=isMax?WIN_SCORE+d:-WIN_SCORE-d; bestKey=ak; break;
+        }
+        const x=applyAction(act,p,b,h);
+        let v;
+        // Principal Variation Search: after the first move, use a null window.
+        if(searched===0) {
+          v=minimax(x.newBoard,x.newHands,d-1,alpha,beta,!isMax,ai);
+        } else if(isMax) {
+          v=minimax(x.newBoard,x.newHands,d-1,alpha,alpha+1,false,ai);
+          if(v>alpha && v<beta) v=minimax(x.newBoard,x.newHands,d-1,alpha,beta,false,ai);
+        } else {
+          v=minimax(x.newBoard,x.newHands,d-1,beta-1,beta,true,ai);
+          if(v<beta && v>alpha) v=minimax(x.newBoard,x.newHands,d-1,alpha,beta,true,ai);
+        }
+        searched++;
+        if(isMax) {
+          if(v>best){best=v;bestKey=ak;}
+          if(v>alpha) alpha=v;
+        } else {
+          if(v<best){best=v;bestKey=ak;}
+          if(v<beta) beta=v;
+        }
+        if(beta<=alpha) {
+          noteKiller(d,ak); noteHistory(p,ak,d);
+          break;
+        }
+      }
+      let flag='EXACT';
+      if(best<=alphaOrig) flag='UPPER';
+      else if(best>=betaOrig) flag='LOWER';
+      if(transpositionTable.size>=MAX_TT_ENTRIES) {
+        const first=transpositionTable.keys().next().value;
+        if(first!==undefined) transpositionTable.delete(first);
+      }
+      transpositionTable.set(key,{value:best,depth:d,flag:flag,bestKey:bestKey});
+      return best;
+    }
+
+    function chooseOpeningAction(candidates, moveCount) {
+      // Only add variety in the opening. Mid/late game remains deterministic.
+      if(moveCount > 6 || candidates.length <= 1) return candidates[0].action;
+
+      // Keep choices genuinely strong: within a small score window of the best.
+      const bestScore=candidates[0].value;
+      const window=80 + Math.min(220, Math.abs(bestScore)*0.012);
+      const strong=candidates.filter(x => x.value >= bestScore-window).slice(0,4);
+      if(strong.length<=1) return strong[0].action;
+
+      // Weighted random: best move is still favored, but the opening won't be a clone army.
+      let total=0;
+      for(let i=0;i<strong.length;i++) {
+        const rankWeight=strong.length-i;
+        const closeness=Math.max(0.15, 1 - Math.max(0,bestScore-strong[i].value)/Math.max(1,window));
+        strong[i].weight=rankWeight*closeness;
+        total+=strong[i].weight;
+      }
+      let roll=Math.random()*total;
+      for(let i=0;i<strong.length;i++) {
+        roll-=strong[i].weight;
+        if(roll<=0) return strong[i].action;
+      }
+      return strong[0].action;
+    }
+
+    self.onmessage=function(e) {
+      const {board,hands,aiPlayer,moveCount=0}=e.data;
+      const acts=getAllPossibleActions(aiPlayer,board,hands);
+      if(acts.length===0) return self.postMessage({bestAction:null});
+
+      const goal=aiPlayer==='blue'?0:8;
+      for(let i=0;i<acts.length;i++) {
+        if(acts[i].to.r===goal) return self.postMessage({bestAction:acts[i]});
       }
 
-      searchStart = Date.now();
+      searchStart=Date.now();
       transpositionTable.clear();
-      let bestAct = acts[0], bestVal = -Infinity;
+      historyHeuristic.clear();
+      for(let i=0;i<killerMoves.length;i++) killerMoves[i]=[];
 
-      for(let d=1; d<=7; d++) {
-        let a = -Infinity, b = Infinity, cBest = null, cVal = -Infinity, comp = true;
-        acts.sort((x, y) => scoreAction(y, board, aiPlayer, bestAct) - scoreAction(x, board, aiPlayer, bestAct));
-        
-        for(let i=0; i<acts.length; i++) {
+      let bestAct=acts[0], bestVal=-Infinity, pv=null;
+      let deepestCandidates=[];
+
+      for(let d=1;d<=7;d++) {
+        let alpha=-Infinity, beta=Infinity;
+        let cBest=null, cVal=-Infinity, completed=true;
+        const rootScores=[];
+
+        orderActions(acts,board,aiPlayer,bestAct,null,d);
+
+        for(let i=0;i<acts.length;i++) {
           try {
-            const {newBoard, newHands} = applyAction(acts[i], aiPlayer, board, hands);
-            const v = minimax(newBoard, newHands, d-1, a, b, false, aiPlayer);
-            if(v > cVal) { cVal = v; cBest = acts[i]; }
-            if(v > a) a = v;
+            const x=applyAction(acts[i],aiPlayer,board,hands);
+            const v=minimax(x.newBoard,x.newHands,d-1,alpha,beta,false,aiPlayer);
+            rootScores.push({action:acts[i],value:v});
+            if(v>cVal) { cVal=v; cBest=acts[i]; }
+            if(v>alpha) alpha=v;
           } catch(err) {
-            if(err.message === 'TO') comp = false;
+            if(err.message==='TO') completed=false;
             break;
           }
         }
-        if(comp && cBest) { bestAct = cBest; bestVal = cVal; } else break;
-        if(bestVal >= WIN_SCORE - 1000) break;
+
+        if(completed && cBest) {
+          bestAct=cBest;
+          bestVal=cVal;
+          pv=cBest;
+          rootScores.sort((a,b)=>b.value-a.value);
+          deepestCandidates=rootScores.slice(0,4);
+        } else break;
+
+        if(bestVal>=WIN_SCORE-1000) break;
       }
-      self.postMessage({bestAction: bestAct});
+
+      // In the opening, choose among the strongest few moves instead of always
+      // returning the exact same principal variation.
+      const finalCandidates=deepestCandidates.length?deepestCandidates:[{action:bestAct,value:bestVal}];
+      const chosen=chooseOpeningAction(finalCandidates,moveCount);
+      self.postMessage({bestAction:chosen});
     };
   `;
 
@@ -890,7 +1090,7 @@
     if(!gameOver && gameMode==='pve' && turn!==playerSide) triggerAIMove();
   }
 
-  function triggerAIMove() { if(!gameOver) aiWorker.postMessage({board, hands, aiPlayer:turn}); }
+  function triggerAIMove() { if(!gameOver) aiWorker.postMessage({board, hands, aiPlayer:turn, moveCount:moveHistory.length}); }
   function executeAIAction(a) { applyActionToBoard(a); }
 
   function endDraw(msg) {
