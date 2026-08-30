@@ -217,14 +217,74 @@
     .cry-emoji { position: absolute; font-size: 32px; top: -40px; animation: cryFall linear infinite; }
     @keyframes cryFall { 0% { transform: translateY(0) scale(0.8); opacity: 0.9; } 100% { transform: translateY(105vh) scale(1.2); opacity: 0.1; } }
 
+    .online-game-controls {
+      display: none;
+      align-items: center;
+      gap: 8px;
+    }
+    .online-game-controls.visible { display: flex; }
+    .btn-resign {
+      background: rgba(218, 54, 51, 0.12);
+      border: 1px solid rgba(248, 81, 73, 0.45);
+      color: #ff7b72;
+      padding: 7px 13px;
+      border-radius: 24px;
+      font-size: 13px;
+      font-weight: 750;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .btn-resign:hover {
+      background: rgba(248, 81, 73, 0.18);
+      border-color: #f85149;
+      color: #fff;
+      transform: translateY(-1px);
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 28px;
+      transform: translate(-50%, 18px);
+      z-index: 3000;
+      max-width: min(420px, calc(100vw - 32px));
+      padding: 11px 17px;
+      border-radius: 13px;
+      background: rgba(22, 27, 34, 0.96);
+      border: 1px solid rgba(255,255,255,0.16);
+      color: #f0f6fc;
+      box-shadow: 0 12px 35px rgba(0,0,0,0.55);
+      backdrop-filter: blur(12px);
+      font-size: 14px;
+      font-weight: 700;
+      text-align: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease, transform .2s ease;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .toast.error { border-color: rgba(248,81,73,.45); color: #ff7b72; }
+    .toast.success { border-color: rgba(63,185,80,.4); color: #7ee787; }
+
     @media (max-width: 920px) { .game-layout { flex-wrap: wrap; justify-content: center; margin-top: 15px; } .board-wrapper, .hand-box, .log-box { height: auto; } .log-box { width: 100%; max-width: calc(100vw - 40px); height: 120px; } }
     @media (max-width: 768px) {
       .top-bar { position: relative; top: 0; left: 0; right: 0; width: 100%; margin-bottom: 10px; flex-wrap: wrap; }
       .game-layout { flex-direction: column; align-items: center; gap: 12px; margin-top: 0; width: 100%; }
       .board { grid-template-columns: repeat(9, calc((100vw - 80px) / 9)); grid-template-rows: repeat(9, calc((100vw - 80px) / 9)); gap: 1.5px; padding: 4px; }
       .cell { width: 100%; height: 100%; } .piece { width: 82%; height: 82%; font-size: 15px; }
-      .hand-box { width: 100%; max-width: calc(100vw - 40px); height: 65px; flex-direction: row; gap: 8px; padding: 6px; }
-      .hand-box > div:first-child { display: none; } .hand-slot { flex-direction: row; gap: 6px; } .hand-badge { position: static; } .hand-icon { font-size: 18px; } .modal-box { padding: 22px 18px; }
+      .hand-box { width: 100%; max-width: calc(100vw - 40px); height: 62px; flex-direction: row; gap: 7px; padding: 5px; border-radius: 16px; }
+      .hand-box > div:first-child { display: none; }
+      .hand-slot { flex-direction: row; gap: 5px; border-radius: 10px; min-width: 0; }
+      .hand-badge { position: static; }
+      .hand-icon { font-size: 18px; }
+      .status-bar-wrapper { width: 100%; justify-content: center; gap: 7px; }
+      .status-badge { padding: 7px 12px; font-size: 12px; max-width: calc(100vw - 132px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .btn-flip { padding: 7px 10px; font-size: 12px; }
+      .online-game-controls { width: 100%; justify-content: center; order: -1; margin-bottom: 2px; }
+      .btn-resign { width: min(100%, 260px); padding: 9px 14px; font-size: 13px; }
+      .modal-box { padding: 22px 18px; }
+      .toast { bottom: 18px; font-size: 13px; }
     }
   </style>
 </head>
@@ -246,6 +306,8 @@
     </div>
   </div>
 
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
   <div class="top-bar">
     <div class="volume-control">
       <span class="volume-icon" id="muteBtn" onclick="toggleMute()">🔊</span>
@@ -253,6 +315,9 @@
       <span class="track-info" id="trackInfo">🎵 Loading...</span>
     </div>
     <div class="top-bar-right">
+      <div class="online-game-controls" id="onlineGameControls">
+        <button class="btn-resign" onclick="resignOnlineGame()">Resign</button>
+      </div>
       <button class="btn" style="padding: 6px 14px; font-size: 13px;" onclick="showStartScreen()">Main Menu</button>
     </div>
   </div>
@@ -868,34 +933,105 @@
 
   function showOnlineMenu() { hideAllOverlays(); document.getElementById('onlineMenuScreen').classList.remove('hidden'); backToOnlineOptions(); }
   function backToOnlineOptions() { document.getElementById('onlineInitialOptions').classList.remove('hidden'); document.getElementById('onlineHostView').classList.add('hidden'); document.getElementById('onlineJoinView').classList.add('hidden'); }
-  
+
+  function setOnlineControlsVisible(visible) {
+    const el = document.getElementById('onlineGameControls');
+    if(el) el.classList.toggle('visible', !!visible);
+  }
+
   function showCreateRoomUI() {
     document.getElementById('onlineInitialOptions').classList.add('hidden'); document.getElementById('onlineHostView').classList.remove('hidden');
+    setOnlineControlsVisible(false);
     if(peer) peer.destroy();
+    peerConn = null;
     peer = new Peer();
     peer.on('open', id => { document.getElementById('roomCodeDisplay').value = id; });
     peer.on('connection', conn => {
       peerConn = conn; setupPeerListeners(); isOnlineHost = true; playerSide = 'blue'; gameMode = 'online'; hideAllOverlays(); checkTutorialOrStart();
     });
+    peer.on('error', err => { console.error('Peer error:', err); });
   }
 
   function showJoinRoomInput() { document.getElementById('onlineInitialOptions').classList.add('hidden'); document.getElementById('onlineJoinView').classList.remove('hidden'); }
+
   function joinOnlineRoom() {
-    const code = document.getElementById('roomCodeInput').value.trim();
-    if(!code) return showCustomAlert('Please enter a valid Room Code!');
+    const input = document.getElementById('roomCodeInput');
+    const code = input.value.trim();
+    if(!code) return showToast('Invalid room code', 'error');
     if(peer) peer.destroy();
+    peerConn = null;
     peer = new Peer();
+
     peer.on('open', () => {
-      peerConn = peer.connect(code); setupPeerListeners(); isOnlineHost = false; playerSide = 'red'; gameMode = 'online'; hideAllOverlays(); checkTutorialOrStart();
+      const conn = peer.connect(code, { reliable: true });
+      peerConn = conn;
+      isOnlineHost = false;
+      playerSide = 'red';
+      gameMode = 'online';
+      setupPeerListeners();
+      conn.on('open', () => {
+        hideAllOverlays();
+        checkTutorialOrStart();
+      });
+      conn.on('error', () => {
+        showToast('Invalid room code', 'error');
+        if(peer) peer.destroy();
+        peer = null;
+        peerConn = null;
+        gameMode = 'pvp';
+        setOnlineControlsVisible(false);
+      });
+    });
+    peer.on('error', err => {
+      if(err && (err.type === 'peer-unavailable' || err.type === 'network' || err.type === 'server-error')) {
+        showToast('Invalid room code', 'error');
+        if(peer) peer.destroy();
+        peer = null;
+        peerConn = null;
+        gameMode = 'pvp';
+        setOnlineControlsVisible(false);
+      }
     });
   }
-  function copyRoomCode() { const input = document.getElementById('roomCodeDisplay'); input.select(); navigator.clipboard.writeText(input.value); showCustomAlert('Room Code copied to clipboard!'); }
+
+  function showToast(msg, kind='') {
+    const el = document.getElementById('toast');
+    if(!el) return;
+    el.textContent = msg;
+    el.className = `toast ${kind}`;
+    requestAnimationFrame(() => el.classList.add('show'));
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => el.classList.remove('show'), 1800);
+  }
+
+  function copyRoomCode() {
+    const input = document.getElementById('roomCodeDisplay');
+    input.select();
+    const done = () => showToast('Room code copied', 'success');
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(input.value).then(done).catch(() => { document.execCommand('copy'); done(); });
+    else { document.execCommand('copy'); done(); }
+  }
 
   function setupPeerListeners() {
-    peerConn.on('data', d => { if(d.type==='MOVE') applyRemoteMove(d.action); else if(d.type==='RESTART') initGame(); });
-    peerConn.on('close', () => { showCustomAlert('Opponent disconnected!'); showStartScreen(); });
+    peerConn.on('data', d => {
+      if(d.type==='MOVE') applyRemoteMove(d.action);
+      else if(d.type==='RESTART') initGame();
+      else if(d.type==='RESIGN') endGame(playerSide, `${d.player==='blue'?'Blue':'Red'} resigned.`);
+    });
+    peerConn.on('close', () => {
+      setOnlineControlsVisible(false);
+      showCustomAlert('Opponent disconnected!');
+      showStartScreen();
+    });
   }
-  function sendOnlineMove(action) { if(peerConn && gameMode==='online') peerConn.send({type:'MOVE', action}); }
+  function sendOnlineMove(action) { if(peerConn && gameMode==='online' && peerConn.open) peerConn.send({type:'MOVE', action}); }
+
+  function resignOnlineGame() {
+    if(gameMode!=='online' || gameOver || !peerConn || !peerConn.open) return;
+    const winner = playerSide === 'blue' ? 'red' : 'blue';
+    peerConn.send({type:'RESIGN', player:playerSide});
+    endGame(winner, `${playerSide==='blue'?'Blue':'Red'} resigned.`);
+  }
 
   function chooseSide(side) { playerSide = side; document.getElementById('sideSelectScreen').classList.add('hidden'); checkTutorialOrStart(); }
   function checkTutorialOrStart() { if(hasViewedTutorial) initGame(); else document.getElementById('tutorialPromptScreen').classList.remove('hidden'); }
@@ -903,7 +1039,7 @@
   function skipTutorial() { hasViewedTutorial = true; document.getElementById('tutorialPromptScreen').classList.add('hidden'); initGame(); }
   function closeTutorial() { document.getElementById('tutorialContentScreen').classList.add('hidden'); initGame(); }
   function hideAllOverlays() { document.querySelectorAll('.screen-overlay').forEach(el => el.classList.add('hidden')); }
-  function showStartScreen() { clearEffects(); if(peer) peer.destroy(); hideAllOverlays(); document.getElementById('startScreen').classList.remove('hidden'); }
+  function showStartScreen() { clearEffects(); if(peer) peer.destroy(); peer=null; peerConn=null; gameMode='pvp'; setOnlineControlsVisible(false); hideAllOverlays(); document.getElementById('startScreen').classList.remove('hidden'); }
 
   function canEat(a, d) { return (a==='scissors'&&d==='paper')||(a==='paper'&&d==='rock')||(a==='rock'&&d==='scissors'); }
   function getCoordNotation(r, c) { return `${COLS[c]}${ROWS[r]}`; }
@@ -988,6 +1124,7 @@
     [3,4,5].forEach(c => board[0][c]={player:'red', type:'paper'});
 
     renderCoordinates(); render();
+    setOnlineControlsVisible(gameMode==='online' && !!peerConn && !!peerConn.open);
     if(gameMode==='pve' && playerSide==='red') triggerAIMove();
   }
 
@@ -1095,6 +1232,7 @@
 
   function endDraw(msg) {
     gameOver = true;
+    setOnlineControlsVisible(false);
     clearEffects();
     render();
     document.getElementById('gameOverTitle').textContent = 'DRAW';
@@ -1105,7 +1243,9 @@
   }
 
   function endGame(w, msg) {
-    gameOver = true; render();
+    gameOver = true;
+    setOnlineControlsVisible(false);
+    render();
     const isPlayer = gameMode==='pvp' || w===playerSide;
     document.getElementById('gameOverTitle').textContent = isPlayer ? (gameMode==='pvp'?`${w.toUpperCase()} VICTORY!`:'YOU WIN!') : 'YOU DEFEATED!';
     document.getElementById('gameOverMsg').textContent = msg;
@@ -1131,7 +1271,7 @@
     }
   }
   function clearEffects() { document.getElementById('effectsLayer').innerHTML = ''; }
-  function restartGame() { document.getElementById('gameOverScreen').classList.add('hidden'); if(gameMode==='online'&&peerConn) peerConn.send({type:'RESTART'}); initGame(); }
+  function restartGame() { document.getElementById('gameOverScreen').classList.add('hidden'); if(gameMode==='online'&&peerConn&&peerConn.open) peerConn.send({type:'RESTART'}); initGame(); }
 
   function render() {
     const isHistory = viewHistoryIndex !== -1;
