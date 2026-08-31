@@ -221,6 +221,8 @@
       display: none;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
     }
     .online-game-controls.visible { display: flex; }
     .btn-resign {
@@ -238,6 +240,24 @@
     .btn-resign:hover {
       background: rgba(248, 81, 73, 0.18);
       border-color: #f85149;
+      color: #fff;
+      transform: translateY(-1px);
+    }
+    .btn-draw {
+      background: rgba(210, 153, 34, 0.12);
+      border: 1px solid rgba(210, 153, 34, 0.45);
+      color: #d29922;
+      padding: 7px 13px;
+      border-radius: 24px;
+      font-size: 13px;
+      font-weight: 750;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .btn-draw:hover {
+      background: rgba(210, 153, 34, 0.18);
+      border-color: #d29922;
       color: #fff;
       transform: translateY(-1px);
     }
@@ -282,7 +302,7 @@
       .status-badge { padding: 7px 12px; font-size: 12px; max-width: calc(100vw - 132px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .btn-flip { padding: 7px 10px; font-size: 12px; }
       .online-game-controls { width: 100%; justify-content: center; order: -1; margin-bottom: 2px; }
-      .btn-resign { width: min(100%, 260px); padding: 9px 14px; font-size: 13px; }
+      .btn-resign, .btn-draw { flex: 1 1 0; min-width: 120px; padding: 9px 12px; font-size: 13px; }
       .modal-box { padding: 22px 18px; }
       .toast { bottom: 18px; font-size: 13px; }
     }
@@ -296,6 +316,17 @@
 
   <div class="start-click-overlay" id="clickToStartOverlay" onclick="handleFirstUserClick()">
     <div class="start-click-text">CLICK ANYWHERE TO START</div>
+  </div>
+
+  <div class="screen-overlay hidden" id="drawOfferScreen" style="z-index: 2100;">
+    <div class="modal-box" style="max-width: 380px; padding: 28px;">
+      <div class="modal-title" style="font-size: 22px; color: #d29922;">Draw Offered</div>
+      <div class="modal-body" style="text-align: center; margin-bottom: 24px; font-weight: bold;">Your opponent has offered a draw.</div>
+      <div class="btn-group" style="max-width:100%; flex-direction:row;">
+        <button class="btn btn-primary" style="flex:1;" onclick="respondToDraw(true)">Accept</button>
+        <button class="btn" style="flex:1;" onclick="respondToDraw(false)">Decline</button>
+      </div>
+    </div>
   </div>
 
   <div class="screen-overlay hidden" id="customAlertScreen" style="z-index: 2000;">
@@ -316,9 +347,10 @@
     </div>
     <div class="top-bar-right">
       <div class="online-game-controls" id="onlineGameControls">
-        <button class="btn-resign" onclick="resignOnlineGame()">Resign</button>
+        <button class="btn-resign" onclick="resignCurrentGame()">Resign</button>
+        <button class="btn-draw" id="offerDrawBtn" onclick="offerDraw()" style="display:none;">Offer Draw</button>
       </div>
-      <button class="btn" style="padding: 6px 14px; font-size: 13px;" onclick="showStartScreen()">Main Menu</button>
+      <button class="btn" id="mainMenuButton" style="padding: 6px 14px; font-size: 13px;" onclick="showStartScreen()">Main Menu</button>
     </div>
   </div>
 
@@ -926,7 +958,7 @@
   let gameMode = 'pvp', playerSide = 'blue', turn = 'blue', board = [], hands = {blue:[], red:[]}, selectedPos = null, selectedHandPiece = null, validMoves = [], gameOver = false;
 
   function selectMode(mode) {
-    gameMode = mode; clearEffects(); hideAllOverlays();
+    gameMode = mode; clearEffects(); hideAllOverlays(); updateMainMenuVisibility();
     if(mode==='pve') document.getElementById('sideSelectScreen').classList.remove('hidden');
     else { playerSide='blue'; checkTutorialOrStart(); }
   }
@@ -936,7 +968,14 @@
 
   function setOnlineControlsVisible(visible) {
     const el = document.getElementById('onlineGameControls');
+    const drawBtn = document.getElementById('offerDrawBtn');
     if(el) el.classList.toggle('visible', !!visible);
+    if(drawBtn) drawBtn.style.display = (visible && gameMode==='online') ? '' : 'none';
+  }
+
+  function updateMainMenuVisibility() {
+    const btn = document.getElementById('mainMenuButton');
+    if(btn) btn.style.display = gameMode==='pve' ? 'none' : '';
   }
 
   function showCreateRoomUI() {
@@ -1017,6 +1056,13 @@
       if(d.type==='MOVE') applyRemoteMove(d.action);
       else if(d.type==='RESTART') initGame();
       else if(d.type==='RESIGN') endGame(playerSide, `${d.player==='blue'?'Blue':'Red'} resigned.`);
+      else if(d.type==='DRAW_OFFER') {
+        if(!gameOver) document.getElementById('drawOfferScreen').classList.remove('hidden');
+      }
+      else if(d.type==='DRAW_RESPONSE') {
+        if(d.accepted && !gameOver) endDraw('Draw by agreement.');
+        else if(!gameOver) showToast('Draw offer declined.', 'error');
+      }
     });
     peerConn.on('close', () => {
       setOnlineControlsVisible(false);
@@ -1033,13 +1079,34 @@
     endGame(winner, `${playerSide==='blue'?'Blue':'Red'} resigned.`);
   }
 
+  function resignCurrentGame() {
+    if(gameMode==='online') return resignOnlineGame();
+    if(gameMode!=='pve' || gameOver) return;
+    const winner = playerSide==='blue' ? 'red' : 'blue';
+    endGame(winner, `${playerSide==='blue'?'Blue':'Red'} resigned.`);
+  }
+
+  function offerDraw() {
+    if(gameMode!=='online' || gameOver || !peerConn || !peerConn.open) return;
+    peerConn.send({type:'DRAW_OFFER'});
+    showToast('Draw offer sent.', 'success');
+  }
+
+  function respondToDraw(accepted) {
+    document.getElementById('drawOfferScreen').classList.add('hidden');
+    if(gameMode!=='online' || gameOver || !peerConn || !peerConn.open) return;
+    peerConn.send({type:'DRAW_RESPONSE', accepted});
+    if(accepted) endDraw('Draw by agreement.');
+    else showToast('Draw offer declined.', 'error');
+  }
+
   function chooseSide(side) { playerSide = side; document.getElementById('sideSelectScreen').classList.add('hidden'); checkTutorialOrStart(); }
   function checkTutorialOrStart() { if(hasViewedTutorial) initGame(); else document.getElementById('tutorialPromptScreen').classList.remove('hidden'); }
   function startTutorial() { hasViewedTutorial = true; document.getElementById('tutorialPromptScreen').classList.add('hidden'); document.getElementById('tutorialContentScreen').classList.remove('hidden'); }
   function skipTutorial() { hasViewedTutorial = true; document.getElementById('tutorialPromptScreen').classList.add('hidden'); initGame(); }
   function closeTutorial() { document.getElementById('tutorialContentScreen').classList.add('hidden'); initGame(); }
   function hideAllOverlays() { document.querySelectorAll('.screen-overlay').forEach(el => el.classList.add('hidden')); }
-  function showStartScreen() { clearEffects(); if(peer) peer.destroy(); peer=null; peerConn=null; gameMode='pvp'; setOnlineControlsVisible(false); hideAllOverlays(); document.getElementById('startScreen').classList.remove('hidden'); }
+  function showStartScreen() { clearEffects(); document.getElementById('drawOfferScreen').classList.add('hidden'); if(peer) peer.destroy(); peer=null; peerConn=null; gameMode='pvp'; setOnlineControlsVisible(false); updateMainMenuVisibility(); hideAllOverlays(); document.getElementById('startScreen').classList.remove('hidden'); }
 
   function canEat(a, d) { return (a==='scissors'&&d==='paper')||(a==='paper'&&d==='rock')||(a==='rock'&&d==='scissors'); }
   function getCoordNotation(r, c) { return `${COLS[c]}${ROWS[r]}`; }
@@ -1124,7 +1191,8 @@
     [3,4,5].forEach(c => board[0][c]={player:'red', type:'paper'});
 
     renderCoordinates(); render();
-    setOnlineControlsVisible(gameMode==='online' && !!peerConn && !!peerConn.open);
+    updateMainMenuVisibility();
+    setOnlineControlsVisible((gameMode==='pve') || (gameMode==='online' && !!peerConn && !!peerConn.open));
     if(gameMode==='pve' && playerSide==='red') triggerAIMove();
   }
 
