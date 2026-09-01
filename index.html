@@ -217,13 +217,28 @@
     .cry-emoji { position: absolute; font-size: 32px; top: -40px; animation: cryFall linear infinite; }
     @keyframes cryFall { 0% { transform: translateY(0) scale(0.8); opacity: 0.9; } 100% { transform: translateY(105vh) scale(1.2); opacity: 0.1; } }
 
-    .online-game-controls {
-      display: none;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
+    
+      .online-game-controls {
+        display: none;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+        position: static; 
+      }
+
+      
+      @media (max-width: 768px) {
+        .online-game-controls {
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          z-index: 100;
+          width: auto;
+          justify-content: flex-end;
+          margin-bottom: 0;
+        }
+      }
     .online-game-controls.visible { display: flex; }
     .btn-resign {
       background: rgba(218, 54, 51, 0.12);
@@ -610,548 +625,579 @@
     document.getElementById('customAlertScreen').classList.add('hidden');
   }
 
-  const workerCode = `
-    // SSS PVE V5: high-strength deterministic game-search core.
-    // Only the AI thinking worker is changed. The host game/UI/network contract is unchanged.
-    const DIRS=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
-    const TYPES=['rock','paper','scissors'];
-    const TIDX={rock:0,paper:1,scissors:2};
-    const EMPTY=0, MATE=90000000;
+const workerCode = `
+  // SSS CUSTOM ENGINE v5 - hardened tactical solver
+  // Actual rules: 9x9, RPS capture, friendly jump, reserve drops,
+  // breakthrough victory and no-move victory.
+  const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+  const TYPES = ['rock','paper','scissors'];
+  const TIDX = {rock:0, paper:1, scissors:2};
+  const EMPTY = 0;
+  const MATE = 9000000;
+  const DRAW = 0;
+  const TIME_LIMIT = 6200;
+  const MAX_PLY = 96;
+  const RACE_CAP = 3;
 
-    // Search budget. Iterative deepening always returns the last fully completed iteration.
-    const TIME_LIMIT=8500;
-    const NORMAL_MAX_DEPTH=32;
-    const ENDGAME_MAX_DEPTH=52;
-    const ENDGAME_PIECES=10;
-    const QUIET_QDEPTH=12;
-    const MAX_TT=900000;
-    const MAX_CACHE=260000;
-    const MAX_ROOT_MOVES=9999;
+  // ---------- deterministic hash / Zobrist ----------
+  let seed = 0x9e3779b9 >>> 0;
+  function rnd32() {
+    seed = (seed + 0x6D2B79F5) >>> 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return (t ^ (t >>> 14)) >>> 0;
+  }
+  function mix32(x) {
+    x >>>= 0;
+    x ^= x >>> 16; x = Math.imul(x, 0x7feb352d) >>> 0;
+    x ^= x >>> 15; x = Math.imul(x, 0x846ca68b) >>> 0;
+    return (x ^ (x >>> 16)) >>> 0;
+  }
 
-    function pOf(code){return code===0?null:(code<=3?'blue':'red');}
-    function tOf(code){return code<=0?-1:(code<=3?code-1:code-4);}
-    function codeOf(p,t){return p==='blue'?t+1:t+4;}
-    function opp(p){return p==='blue'?'red':'blue';}
-    function goal(p){return p==='blue'?0:8;}
-    function canEatType(a,d){return (a===2&&d===1)||(a===1&&d===0)||(a===0&&d===2);}
-    function inside(r,c){return r>=0&&r<9&&c>=0&&c<9;}
-    function idx(r,c){return r*9+c;}
-    function countPieces(b){let n=0;for(let i=0;i<81;i++)if(b[i])n++;return n;}
-    function ownCount(st,p){let n=0;for(let i=0;i<81;i++)if(pOf(st.b[i])===p)n++;return n;}
-    function cloneState(st){return {b:st.b.slice(),h:st.h.slice()};}
-    function actionKey(a){return a.type==='move'?'m'+a.fr+a.fc+a.tr+a.tc:'d'+a.t+a.tr+a.tc;}
-    function sameMove(a,b){return !!a&&!!b&&actionKey(a)===actionKey(b);}
+  const ZA = Array.from({length: 7}, () => new Uint32Array(81));
+  const ZB = Array.from({length: 7}, () => new Uint32Array(81));
+  const HA = Array.from({length: 6}, () => new Uint32Array(10));
+  const HB = Array.from({length: 6}, () => new Uint32Array(10));
+  const TURN_A = rnd32(), TURN_B = rnd32();
+  for(let c=0;c<7;c++) for(let s=0;s<81;s++) { ZA[c][s]=rnd32(); ZB[c][s]=rnd32(); }
+  for(let i=0;i<6;i++) for(let n=0;n<10;n++) { HA[i][n]=rnd32(); HB[i][n]=rnd32(); }
 
-    function fromInput(board,hands){
-      const b=new Uint8Array(81),h=new Uint8Array(6);
-      for(let r=0;r<9;r++)for(let c=0;c<9;c++){
-        const q=board[r][c];if(q)b[idx(r,c)]=codeOf(q.player,TIDX[q.type]);
-      }
-      for(let i=0;i<hands.blue.length;i++)h[TIDX[hands.blue[i]]]++;
-      for(let i=0;i<hands.red.length;i++)h[3+TIDX[hands.red[i]]]++;
-      return {b,h};
+  // ---------- transposition table ----------
+  const TT_SIZE = 1 << 21;
+  const TT_MASK = TT_SIZE - 1;
+  const ttKeyA = new Uint32Array(TT_SIZE);
+  const ttKeyB = new Uint32Array(TT_SIZE);
+  const ttVal = new Int32Array(TT_SIZE);
+  const ttDepth = new Int8Array(TT_SIZE);
+  const ttFlags = new Uint8Array(TT_SIZE); // 0 empty, 1 exact, 2 lower, 3 upper
+  const ttMoveType = new Int8Array(TT_SIZE); // 0 move, 1 drop, -1 none
+  const ttMoveFrom = new Int8Array(TT_SIZE);
+  const ttMoveTo = new Int8Array(TT_SIZE);
+  const ttMovePiece = new Int8Array(TT_SIZE);
+
+  function clearTT() { ttKeyA.fill(0); ttKeyB.fill(0); ttFlags.fill(0); }
+  function isMateScore(v){ return Math.abs(v) > MATE-10000; }
+  function ttStoreScore(v,ply){
+    if(v >= MATE-10000) return v + ply;
+    if(v <= -MATE+10000) return v - ply;
+    return v;
+  }
+  function ttLoadScore(v,ply){
+    if(v >= MATE-10000) return v - ply;
+    if(v <= -MATE+10000) return v + ply;
+    return v;
+  }
+  function storeTT(keyA,keyB,depth,val,flag,move,ply) {
+    const n = keyA & TT_MASK;
+    if(ttFlags[n]!==0 && ttKeyA[n]===keyA && ttKeyB[n]===keyB && ttDepth[n]>depth) return;
+    ttKeyA[n]=keyA; ttKeyB[n]=keyB; ttDepth[n]=depth; ttVal[n]=ttStoreScore(val,ply); ttFlags[n]=flag;
+    if(move) {
+      ttMoveType[n] = move.type==='move' ? 0 : 1;
+      ttMoveFrom[n] = move.type==='move' ? (move.fr*9+move.fc) : -1;
+      ttMoveTo[n] = move.tr*9+move.tc;
+      ttMovePiece[n] = move.type==='drop' ? move.t : -1;
+    } else {
+      ttMoveType[n]=-1; ttMoveFrom[n]=-1; ttMoveTo[n]=-1; ttMovePiece[n]=-1;
     }
+  }
+  function probeTT(keyA,keyB,ply) {
+    const n=keyA&TT_MASK;
+    if(ttFlags[n]===0 || ttKeyA[n]!==keyA || ttKeyB[n]!==keyB) return null;
+    let move=null;
+    if(ttMoveType[n]===0) {
+      const f=ttMoveFrom[n], t=ttMoveTo[n];
+      move={type:'move',fr:Math.floor(f/9),fc:f%9,tr:Math.floor(t/9),tc:t%9};
+    } else if(ttMoveType[n]===1) {
+      const t=ttMoveTo[n]; move={type:'drop',t:ttMovePiece[n],tr:Math.floor(t/9),tc:t%9};
+    }
+    return {depth:ttDepth[n],val:ttLoadScore(ttVal[n],ply),flag:ttFlags[n],move};
+  }
 
-    function movesFrom(r,c,st,p,out){
-      const b=st.b,src=b[idx(r,c)];if(!src||pOf(src)!==p)return;
-      const t=tOf(src);
+  // ---------- game primitives ----------
+  function pOf(code){ return code===0?null:(code<=3?'blue':'red'); }
+  function tOf(code){ return code<=0?-1:(code<=3?code-1:code-4); }
+  function codeOf(p,t){ return p==='blue'?t+1:t+4; }
+  function opp(p){ return p==='blue'?'red':'blue'; }
+  function goal(p){ return p==='blue'?0:8; }
+  function inside(r,c){ return r>=0&&r<9&&c>=0&&c<9; }
+  function idx(r,c){ return r*9+c; }
+  function canEatType(a,d){ return (a===2&&d===1)||(a===1&&d===0)||(a===0&&d===2); }
+  function forwardDist(r,p){ return p==='blue'?r:8-r; }
+  function sameMove(a,b){
+    if(!a||!b||a.type!==b.type) return false;
+    if(a.type==='move') return a.fr===b.fr&&a.fc===b.fc&&a.tr===b.tr&&a.tc===b.tc;
+    return a.t===b.t&&a.tr===b.tr&&a.tc===b.tc;
+  }
+  function moveKey(a){ return a.type==='drop' ? 6561+a.t*81+a.tr*9+a.tc : idx(a.fr,a.fc)*81+idx(a.tr,a.tc); }
+  function fromInput(board,hands){
+    const b=new Uint8Array(81), h=new Uint8Array(6);
+    for(let r=0;r<9;r++) for(let c=0;c<9;c++){ const q=board[r][c]; if(q) b[idx(r,c)]=codeOf(q.player,TIDX[q.type]); }
+    for(let i=0;i<hands.blue.length;i++) h[TIDX[hands.blue[i]]]++;
+    for(let i=0;i<hands.red.length;i++) h[3+TIDX[hands.red[i]]]++;
+    const st={b,h,keyA:0,keyB:0}; let a=0,bh=0;
+    for(let s=0;s<81;s++){ const c=b[s]; if(c){a^=ZA[c][s];bh^=ZB[c][s];} }
+    for(let i=0;i<6;i++){ const n=h[i];a^=HA[i][n];bh^=HB[i][n]; }
+    st.keyA=a>>>0; st.keyB=bh>>>0; return st;
+  }
+  function keyFor(st,p){ return p==='blue'?[(st.keyA^TURN_A)>>>0,(st.keyB^TURN_B)>>>0]:[st.keyA>>>0,st.keyB>>>0]; }
+  function xorPiece(st,code,sq){ st.keyA=(st.keyA^ZA[code][sq])>>>0; st.keyB=(st.keyB^ZB[code][sq])>>>0; }
+  function xorHand(st,slot,count){ st.keyA=(st.keyA^HA[slot][count])>>>0; st.keyB=(st.keyB^HB[slot][count])>>>0; }
+
+  function makeMove(st,p,a){
+    const b=st.b,h=st.h,u={type:a.type,fr:a.fr,fc:a.fc,tr:a.tr,tc:a.tc,t:a.t,captured:0};
+    const base=p==='blue'?0:3;
+    if(a.type==='move'){
+      const si=idx(a.fr,a.fc),ti=idx(a.tr,a.tc),src=b[si],capt=b[ti]; u.captured=capt;
+      xorPiece(st,src,si);
+      if(capt){ xorPiece(st,capt,ti); const ct=tOf(capt),old=h[base+ct]; xorHand(st,base+ct,old); h[base+ct]=old+1; xorHand(st,base+ct,old+1); }
+      b[si]=0;b[ti]=src;xorPiece(st,src,ti);
+    } else {
+      const ti=idx(a.tr,a.tc),code=codeOf(p,a.t),slot=base+a.t,old=h[slot];
+      xorHand(st,slot,old);h[slot]=old-1;xorHand(st,slot,old-1);b[ti]=code;xorPiece(st,code,ti);
+    }
+    return u;
+  }
+  function unmakeMove(st,p,u){
+    const b=st.b,h=st.h,base=p==='blue'?0:3;
+    if(u.type==='move'){
+      const si=idx(u.fr,u.fc),ti=idx(u.tr,u.tc),src=b[ti],capt=u.captured;
+      xorPiece(st,src,ti);b[ti]=capt;
+      if(capt){ const ct=tOf(capt),slot=base+ct,old=h[slot];xorHand(st,slot,old);h[slot]=old-1;xorHand(st,slot,old-1);xorPiece(st,capt,ti); }
+      b[si]=src;xorPiece(st,src,si);
+    } else {
+      const ti=idx(u.tr,u.tc),code=b[ti],slot=base+u.t;xorPiece(st,code,ti);b[ti]=0;const old=h[slot];xorHand(st,slot,old);h[slot]=old+1;xorHand(st,slot,old+1);
+    }
+  }
+
+  function movesFrom(r,c,st,p,out){
+    const b=st.b,src=b[idx(r,c)]; if(!src||pOf(src)!==p)return;
+    const t=tOf(src);
+    for(let i=0;i<8;i++){
+      const dr=DIRS[i][0],dc=DIRS[i][1],nr=r+dr,nc=c+dc; if(!inside(nr,nc))continue;
+      const ni=idx(nr,nc),q=b[ni];
+      if(q===EMPTY) out.push({type:'move',fr:r,fc:c,tr:nr,tc:nc});
+      else if(pOf(q)!==p&&canEatType(t,tOf(q))) out.push({type:'move',fr:r,fc:c,tr:nr,tc:nc});
+      else if(pOf(q)===p){
+        const jr=r+2*dr,jc=c+2*dc; if(!inside(jr,jc))continue;
+        const jq=b[idx(jr,jc)];
+        if(jq===EMPTY||(pOf(jq)!==p&&canEatType(t,tOf(jq)))) out.push({type:'move',fr:r,fc:c,tr:jr,tc:jc});
+      }
+    }
+  }
+  function dropPositions(st,p,out){
+    out.length=0; const rows=p==='blue'?[5,6,7,8]:[0,1,2,3];
+    for(let i=0;i<4;i++){const r=rows[i];for(let c=0;c<9;c++)if(st.b[idx(r,c)]===0)out.push({r,c});}
+  }
+  function generateAll(st,p,out){
+    out.length=0;
+    for(let r=0;r<9;r++)for(let c=0;c<9;c++)if(pOf(st.b[idx(r,c)])===p)movesFrom(r,c,st,p,out);
+    if(st.h[(p==='blue'?0:3)]+st.h[(p==='blue'?1:4)]+st.h[(p==='blue'?2:5)]>0){
+      const drops=[];dropPositions(st,p,drops);const base=p==='blue'?0:3;
+      for(let t=0;t<3;t++)if(st.h[base+t]>0)for(let i=0;i<drops.length;i++)out.push({type:'drop',t,tr:drops[i].r,tc:drops[i].c});
+    }
+    return out;
+  }
+  function winningMoves(st,p,out){
+    out=out||[];out.length=0;const g=goal(p),tmp=[];
+    for(let r=0;r<9;r++)for(let c=0;c<9;c++)if(pOf(st.b[idx(r,c)])===p){
+      tmp.length=0;movesFrom(r,c,st,p,tmp);for(let i=0;i<tmp.length;i++)if(tmp[i].tr===g)out.push(tmp[i]);
+    }
+    return out;
+  }
+  function threatCount(st,p,cap){
+    const b=st.b, g=goal(p), dir=p==='blue'?-1:1, srcRows=p==='blue'?[1,2]:[7,6];
+    let n=0; const limit=cap||3;
+    // A breakthrough can only land on the goal row, so inspect the two source rows.
+    for(let pass=0;pass<2;pass++){
+      const r=srcRows[pass];
+      for(let c=0;c<9;c++){
+        const src=b[idx(r,c)]; if(!src||pOf(src)!==p) continue;
+        const t=tOf(src);
+        const step=pass===0;
+        if(step){
+          for(let dc=-1;dc<=1;dc++){
+            const tc=c+dc; if(tc<0||tc>8) continue;
+            const q=b[idx(g,tc)];
+            if(q===0 || (pOf(q)!==p && canEatType(t,tOf(q)))){ n++; if(n>=limit)return n; }
+          }
+        }else{
+          // A two-square friendly jump into the goal row requires a friendly piece in-between.
+          const midR=r+dir*0, targetR=g;
+          for(let dc=-1;dc<=1;dc++){
+            const midC=c+dc; if(midC<0||midC>8) continue;
+            const mid=b[idx(r+dir,midC)]; if(!mid||pOf(mid)!==p) continue;
+            const tc=c+2*dc; if(tc<0||tc>8) continue;
+            const q=b[idx(targetR,tc)];
+            if(q===0 || (pOf(q)!==p && canEatType(t,tOf(q)))){ n++; if(n>=limit)return n; }
+          }
+        }
+      }
+    }
+    return n;
+  }
+  function legalActs(st,p,out,enemyWins){
+    generateAll(st,p,out);
+    if(enemyWins>0){
+      const filtered=[];
+      for(let i=0;i<out.length;i++){
+        const a=out[i],u=makeMove(st,p,a);const remaining=threatCount(st,opp(p),1);unmakeMove(st,p,u);
+        if(remaining===0)filtered.push(a);
+      }
+      out.length=0;for(let i=0;i<filtered.length;i++)out.push(filtered[i]);
+    }
+    return out;
+  }
+
+  // ---------- tactical helpers ----------
+  function pieceAttackCount(st,r,c,p,t){
+    let n=0;for(let i=0;i<8;i++){const nr=r+DIRS[i][0],nc=c+DIRS[i][1];if(!inside(nr,nc))continue;const q=st.b[idx(nr,nc)];if(q&&pOf(q)!==p&&canEatType(t,tOf(q)))n++;}return n;
+  }
+  function pieceDefenseCount(st,r,c,p,t){
+    let n=0;for(let i=0;i<8;i++){const nr=r+DIRS[i][0],nc=c+DIRS[i][1];if(!inside(nr,nc))continue;const q=st.b[idx(nr,nc)];if(q&&pOf(q)===p&&canEatType(tOf(q),t))n++;}return n;
+  }
+  function immediateDropThreats(st,p,t){
+    const rows=p==='blue'?[5,6,7,8]:[0,1,2,3];let best=0;
+    for(let i=0;i<4;i++)for(let c=0;c<9;c++){const r=rows[i];if(st.b[idx(r,c)]!==0)continue;let score=0;
+      for(let d=0;d<8;d++){const nr=r+DIRS[d][0],nc=c+DIRS[d][1];if(!inside(nr,nc))continue;const q=st.b[idx(nr,nc)];if(q&&pOf(q)!==p&&canEatType(t,tOf(q)))score+=2;}
+      if(forwardDist(r,p)<=1)score+=5; else if(forwardDist(r,p)<=2)score+=2; if(Math.abs(c-4)<=1)score+=1;
+      if(score>best)best=score;
+    }
+    return best;
+  }
+
+  // ---------- evaluation ----------
+  function evaluate(st,p){
+    const enemy=opp(p);let score=0;
+    let ownMob=0,enemyMob=0,ownAtk=0,enemyAtk=0,ownSup=0,enemySup=0;
+    let ownPieces=0,enemyPieces=0,ownIsolated=0,enemyIsolated=0;
+    let ownFront=99,enemyFront=99,ownAdvanced=0,enemyAdvanced=0;
+    let ownDanger=0,enemyDanger=0,ownCenter=0,enemyCenter=0;
+    let ownRace=0,enemyRace=0;
+
+    for(let r=0;r<9;r++)for(let c=0;c<9;c++){
+      const code=st.b[idx(r,c)];if(!code)continue;const q=pOf(code),t=tOf(code),own=q===p,fd=forwardDist(r,q);
+      const prog=8-fd;let val=230+prog*112+(4-Math.abs(c-4))*24;
+      // Exponential race pressure near the goal.
+      if(fd===0)val+=MATE/2; else if(fd===1)val+=12500; else if(fd===2)val+=3600; else if(fd===3)val+=850; else if(fd===4)val+=230;
+      let mobility=0,attacks=0,support=0,vulnerable=0,jump=0,defense=0;
       for(let i=0;i<8;i++){
-        const dr=DIRS[i][0],dc=DIRS[i][1],nr=r+dr,nc=c+dc;if(!inside(nr,nc))continue;
-        const ni=idx(nr,nc),q=b[ni];
-        if(q===EMPTY)out.push({type:'move',fr:r,fc:c,tr:nr,tc:nc});
-        else if(pOf(q)!==p&&canEatType(t,tOf(q)))out.push({type:'move',fr:r,fc:c,tr:nr,tc:nc});
-        else if(pOf(q)===p){
-          const jr=r+dr*2,jc=c+dc*2;if(!inside(jr,jc))continue;
-          const jq=b[idx(jr,jc)];
-          if(jq===EMPTY||(pOf(jq)!==p&&canEatType(t,tOf(jq))))out.push({type:'move',fr:r,fc:c,tr:jr,tc:jc});
+        const nr=r+DIRS[i][0],nc=c+DIRS[i][1];if(!inside(nr,nc))continue;const qcode=st.b[idx(nr,nc)];
+        if(!qcode)mobility++;
+        else if(pOf(qcode)===q){
+          support++;
+          if(canEatType(tOf(qcode),t)) defense++;
+          const jr=r+2*DIRS[i][0],jc=c+2*DIRS[i][1];
+          if(inside(jr,jc)){const jq=st.b[idx(jr,jc)];if(!jq||(pOf(jq)!==q&&canEatType(t,tOf(jq)))){mobility++;jump++;}}
+        } else {
+          if(canEatType(t,tOf(qcode))){mobility++;attacks++;}
+          else vulnerable++;
         }
       }
-    }
-
-    function dropPositions(st,p){
-      const rows=p==='blue'?[5,6,7,8]:[0,1,2,3],out=[];
-      for(let i=0;i<4;i++)for(let c=0;c<9;c++)if(st.b[idx(rows[i],c)]===0)out.push({r:rows[i],c});
-      return out;
-    }
-
-    function generate(st,p){
-      const ck=baseKey(hashState(st,p)),cached=moveCache.get(ck);if(cached)return cached;
-      const out=[];
-      for(let r=0;r<9;r++)for(let c=0;c<9;c++)if(pOf(st.b[idx(r,c)])===p)movesFrom(r,c,st,p,out);
-      const base=p==='blue'?0:3,drops=dropPositions(st,p);
-      for(let t=0;t<3;t++)if(st.h[base+t]>0)for(let i=0;i<drops.length;i++)out.push({type:'drop',t:t,tr:drops[i].r,tc:drops[i].c});
-      if(moveCache.size>=MAX_CACHE)moveCache.delete(moveCache.keys().next().value);
-      moveCache.set(ck,out);return out;
-    }
-
-    function apply(st,p,a){
-      const ns=cloneState(st),b=ns.b,h=ns.h;
-      if(a.type==='move'){
-        const si=idx(a.fr,a.fc),ti=idx(a.tr,a.tc),src=b[si],capt=b[ti];
-        if(capt)h[(p==='blue'?0:3)+tOf(capt)]++;
-        b[si]=0;b[ti]=src;
-      }else{b[idx(a.tr,a.tc)]=codeOf(p,a.t);h[(p==='blue'?0:3)+a.t]--;}
-      return ns;
-    }
-
-    function winningMoves(st,p){
-      const ck=p+'|'+baseKey(hashState(st,p)),cached=winCache.get(ck);if(cached)return cached;
-      const g=goal(p),out=[];
-      for(let r=0;r<9;r++)for(let c=0;c<9;c++)if(pOf(st.b[idx(r,c)])===p){
-        const ms=[];movesFrom(r,c,st,p,ms);for(let i=0;i<ms.length;i++)if(ms[i].tr===g)out.push(ms[i]);
+      for(let i=0;i<8;i++){
+        const nr=r+DIRS[i][0],nc=c+DIRS[i][1];
+        if(!inside(nr,nc))continue;
+        const qcode=st.b[idx(nr,nc)];
+        if(qcode&&pOf(qcode)===q&&canEatType(tOf(qcode),t))defense++;
       }
-      if(winCache.size>=MAX_CACHE)winCache.delete(winCache.keys().next().value);
-      winCache.set(ck,out);return out;
-    }
-
-    // Deterministic 64-bit-ish Zobrist key represented by two uint32 values.
-    let seed=0x9e3779b9>>>0;
-    function rnd32(){seed=(seed+0x6D2B79F5)>>>0;let t=seed;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return(t^(t>>>14))>>>0;}
-    const ZA=Array.from({length:7},()=>new Array(81)),ZB=Array.from({length:7},()=>new Array(81));
-    const HA=Array.from({length:6},()=>new Array(10)),HB=Array.from({length:6},()=>new Array(10));
-    const TA=rnd32(),TB=rnd32();
-    for(let c=0;c<7;c++)for(let s=0;s<81;s++){ZA[c][s]=rnd32();ZB[c][s]=rnd32();}
-    for(let i=0;i<6;i++)for(let n=0;n<10;n++){HA[i][n]=rnd32();HB[i][n]=rnd32();}
-    function hashState(st,p){
-      let a=p==='blue'?TA:0,b=p==='blue'?TB:0;
-      for(let s=0;s<81;s++){const c=st.b[s];if(c){a^=ZA[c][s];b^=ZB[c][s];}}
-      for(let i=0;i<6;i++){const n=Math.min(9,st.h[i]);a^=HA[i][n];b^=HB[i][n];}
-      return[a>>>0,b>>>0];
-    }
-    function baseKey(h){return(h[0]>>>0).toString(16)+':'+(h[1]>>>0).toString(16);}
-    function stateKey(h,quiet,rep){return baseKey(h)+'|q'+quiet+'|r'+rep;}
-
-    const tt=new Map(),moveCache=new Map(),winCache=new Map(),threatCache=new Map();
-    const killers=new Array(64),hist=new Map(),counter=new Map(),cont=new Map();
-    // Opening memory intentionally survives between games so the engine can avoid
-    // repeating the same first move while still choosing only near-best openings.
-    const openingHistory=new Set();
-    let searchStart=0,nodes=0,cutoffs=0,generation=0,rootSide=null;
-    function resetLearning(){
-      hist.clear();counter.clear();cont.clear();threatCache.clear();moveCache.clear();winCache.clear();tt.clear();
-      for(let i=0;i<killers.length;i++)killers[i]=[];generation++;
-    }
-    function noteKiller(d,k){if(!killers[d])killers[d]=[];const a=killers[d];if(a[0]!==k){a.unshift(k);if(a.length>2)a.pop();}}
-    function noteHistory(p,k,d){const key=p+'|'+k;hist.set(key,Math.min(6000000,(hist.get(key)||0)+d*d*2));}
-    function isCapture(a,st){return a.type==='move'&&st.b[idx(a.tr,a.tc)]!==0;}
-
-    function blocksAll(st,p,a){return winningMoves(apply(st,p,a),opp(p)).length===0;}
-    function threatCountAfter(st,p,a){return winningMoves(apply(st,p,a),p).length;}
-
-    function localMobility(st,r,c,p){const ms=[];movesFrom(r,c,st,p,ms);return ms.length;}
-
-    // Evaluation is intentionally layered: race, immediate threats, RPS geometry,
-    // reserve power, mobility, safety, centrality, and blockade potential.
-    function evaluate(st,p){
-      const enemy=opp(p),pg=goal(p),eg=goal(enemy),pieces=countPieces(st.b);
-      const phase=pieces<=ENDGAME_PIECES?'end':pieces<=16?'mid':'open';
-      const pw=phase==='end'?330:phase==='mid'?205:125;
-      const tw=phase==='end'?270:phase==='mid'?170:105;
-      let score=0,ownProg=0,enemyProg=0,ownMob=0,enemyMob=0,ownSafe=0,enemySafe=0;
-      let ownAttack=0,enemyAttack=0,ownFlex=0,enemyFlex=0,ownBlocked=0,enemyBlocked=0;
-
-      for(let r=0;r<9;r++)for(let c=0;c<9;c++){
-        const code=st.b[idx(r,c)];if(!code)continue;
-        const q=pOf(code),t=tOf(code),own=q===p,g=own?pg:eg,dist=Math.abs(r-g),prog=8-dist;
-        const ms=[];movesFrom(r,c,st,q,ms);const mob=ms.length;
-        let support=0,pressure=0,danger=0,escape=0,attackTargets=0;
-        for(let k=0;k<8;k++){
-          const nr=r+DIRS[k][0],nc=c+DIRS[k][1];if(!inside(nr,nc))continue;
-          const q2=st.b[idx(nr,nc)];
-          if(!q2){escape++;continue;}
-          if(pOf(q2)===q)support++;
-          else{if(canEatType(t,tOf(q2))){pressure++;attackTargets++;}if(canEatType(tOf(q2),t))danger++;}
-        }
-        let v=430+prog*pw*0.55+prog*64;
-        if(dist===0)v+=26000;else if(dist===1)v+=2400;else if(dist===2)v+=760;else if(dist===3)v+=250;
-        if(r===g)v+=9000;
-        v+=support*72+pressure*tw*0.95-danger*tw*1.35+Math.min(8,mob)*31+Math.min(8,escape)*12;
-        v+=attackTargets*55;
-        v+=(4-Math.abs(c-4))*18;
-        // Pieces directly in front of the enemy goal are worth more if they have a route.
-        if(Math.abs(r-g)<=2)v+=Math.max(0,mob-1)*45;
-        if(mob===0)v-=420;
-        if(own){ownProg+=prog;ownMob+=mob;ownSafe+=Math.max(0,2-danger);ownAttack+=attackTargets;ownFlex+=escape;ownBlocked+=mob===0?1:0;score+=v;}
-        else{enemyProg+=prog;enemyMob+=mob;enemySafe+=Math.max(0,2-danger);enemyAttack+=attackTargets;enemyFlex+=escape;enemyBlocked+=mob===0?1:0;score-=v;}
-        if(t===1)score+=(own?1:-1)*(c===4?11:0);
-      }
-
-      function handScore(player){
-        const base=player==='blue'?0:3,hs=st.h[base]+st.h[base+1]+st.h[base+2];
-        let s=hs*125;
-        const drops=dropPositions(st,player).length;s+=Math.min(24,drops)*16;
-        for(let t=0;t<3;t++){
-          const counterT=(t+1)%3;
-          s+=Math.min(st.h[base+t],st.h[base+counterT])*42;
-        }
-        // Reserves are especially valuable when the board is congested.
-        s+=(phase==='end'?42:22)*hs;
-        return s;
-      }
-      score+=handScore(p)-handScore(enemy);
-
-      const ownW=winningMoves(st,p).length,enemyW=winningMoves(st,enemy).length;
-      if(ownW)score+=ownW*30000000;if(enemyW)score-=enemyW*32000000;
-
-      score+=(ownProg-enemyProg)*pw*0.40+(ownMob-enemyMob)*34+(ownSafe-enemySafe)*145;
-      score+=(ownAttack-enemyAttack)*80+(ownFlex-enemyFlex)*17+(enemyBlocked-ownBlocked)*210;
-
-      function routePressure(player){
-        const g=goal(player);let v=0;
-        for(let r=0;r<9;r++)for(let c=0;c<9;c++)if(pOf(st.b[idx(r,c)])===player){
-          const ms=[];movesFrom(r,c,st,player,ms);
-          for(let i=0;i<ms.length;i++){
-            const d=Math.abs(ms[i].tr-g);if(d===0)v+=28000000;else if(d===1)v+=1250;else if(d===2)v+=390;else if(d===3)v+=90;
-          }
-        }
-        return v;
-      }
-      score+=routePressure(p)-routePressure(enemy);
-
-      // Reserve drop access can decide races even when board material is equal.
-      const ownDrops=dropPositions(st,p).length,enemyDrops=dropPositions(st,enemy).length;
-      score+=(ownDrops-enemyDrops)*9;
-      if(phase==='end'){
-        const ob=ownCount(st,p),eb=ownCount(st,enemy);
-        score+=(ob-eb)*170;
-        score+=(ob+st.h[p==='blue'?0:3]-eb-st.h[enemy==='blue'?0:3])*30;
-      }
-      return score;
-    }
-
-    function isForcing(a,st,p,enemyWins){
-      if(a.tr===goal(p)||isCapture(a,st))return true;
-      if(enemyWins>0&&blocksAll(st,p,a))return true;
-      return false;
-    }
-
-    function orderActions(acts,st,p,depth,pv,ttKey,prevMove,enemyWins){
-      const prev=prevMove?actionKey(prevMove):'';
-      const scored=new Array(acts.length);
-      for(let i=0;i<acts.length;i++){
-        const a=acts[i],k=actionKey(a);let s=0;
-        if(pv&&sameMove(pv,a))s+=10000000000;
-        if(ttKey&&k===ttKey)s+=7000000000;
-        if(a.tr===goal(p))s+=2000000000;
-        if(enemyWins>0&&blocksAll(st,p,a))s+=1400000000;
-        if(isCapture(a,st)){
-          s+=220000000;
-          const src=st.b[idx(a.fr,a.fc)],tgt=st.b[idx(a.tr,a.tc)];
-          if(tgt&&canEatType(tOf(src),tOf(tgt)))s+=35000000;
-        }
-        if(a.type==='drop'){
-          s+=6500+(4-Math.abs(a.tc-4))*900;
-          // Drops that immediately create a winning move are nearly forcing.
-          const tw=threatCountAfter(st,p,a);if(tw)s+=tw*180000000;
-        }else{
-          const d=8-Math.abs(a.tr-goal(p));s+=d*2300;
-          if(Math.abs(a.tr-goal(p))<=2)s+=8000;
-        }
-        s+=hist.get(p+'|'+k)||0;
-        if(killers[depth]){if(killers[depth][0]===k)s+=70000000;else if(killers[depth][1]===k)s+=30000000;}
-        if(prev&&counter.get(prev)===k)s+=50000000;
-        if(prev)s+=cont.get(prev+'>'+k)||0;
-        scored[i]={a,s};
-      }
-      scored.sort((x,y)=>y.s-x.s);return scored.map(x=>x.a);
-    }
-
-    function qsearch(st,p,alpha,beta,qDepth,ply,quiet,path,prevMove){
-      if(Date.now()-searchStart>TIME_LIMIT)throw new Error('TO');nodes++;
-      const hash=hashState(st,p),base=baseKey(hash),rep=(path.get(base)||0)+1;
-      if(rep>=3||quiet>=100)return 0;
-      const ownW=winningMoves(st,p);if(ownW.length)return MATE-ply;
-      const enemy=opp(p),enemyW=winningMoves(st,enemy);
-      const stand=evaluate(st,p);
-      let acts=generate(st,p);if(!acts.length)return -MATE+ply;
-      if(enemyW.length){
-        const defs=[];for(let i=0;i<acts.length;i++)if(blocksAll(st,p,acts[i]))defs.push(acts[i]);
-        if(!defs.length)return -MATE+ply;acts=defs;
+      val += mobility*20 + attacks*130 + jump*52 + support*48 + defense*34 - vulnerable*40;
+      if(fd<=3)val += attacks*170 - vulnerable*125 + defense*40;
+      if(fd<=1)val += mobility*44;
+      if(support===0&&fd<=4){val-=34;if(mobility<=1)val-=48;}
+      if(c===4)val+=35;
+      if(q===p){
+        ownPieces++; ownMob+=mobility;ownAtk+=attacks;ownSup+=support;ownDanger+=vulnerable;ownCenter+=(4-Math.abs(c-4));
+        ownFront=Math.min(ownFront,fd);if(fd<=2)ownAdvanced++;if(support===0)ownIsolated++;ownRace+=Math.max(0,16-fd*2)+attacks*2;
+        score+=val;
       }else{
-        if(stand>=beta)return stand;if(stand>alpha)alpha=stand;
-        if(qDepth<=0)return stand;
-        const f=[];
-        for(let i=0;i<acts.length;i++){
-          const a=acts[i];
-          if(isCapture(a,st)||a.tr===goal(p))f.push(a);
-          else if(qDepth>=2&&(a.type==='drop'||Math.abs(a.tr-goal(p))<=2)&&threatCountAfter(st,p,a)>0)f.push(a);
-        }
-        if(!f.length)return stand;acts=f;
+        enemyPieces++;enemyMob+=mobility;enemyAtk+=attacks;enemySup+=support;enemyDanger+=vulnerable;enemyCenter+=(4-Math.abs(c-4));
+        enemyFront=Math.min(enemyFront,fd);if(fd<=2)enemyAdvanced++;if(support===0)enemyIsolated++;enemyRace+=Math.max(0,16-fd*2)+attacks*2;
+        score-=val;
       }
-      if(enemyW.length===0 && qDepth<=0)return evaluate(st,p);
-      acts=orderActions(acts,st,p,qDepth,null,null,prevMove,enemyW.length);
-      let best=stand;
-      for(let i=0;i<acts.length;i++){
-        const a=acts[i],ns=apply(st,p,a),hb=baseKey(hashState(ns,enemy)),pc=(path.get(hb)||0)+1;path.set(hb,pc);
-        const v=-qsearch(ns,enemy,-beta,-alpha,qDepth-1,ply+1,(a.type==='drop'||isCapture(a,st))?0:quiet+1,path,a);
-        path.set(hb,pc-1);if(pc-1<=0)path.delete(hb);
-        if(v>best)best=v;if(v>alpha)alpha=v;if(beta<=alpha){cutoffs++;break;}
-      }
-      return best;
     }
 
-    function search(st,p,depth,alpha,beta,ply,quiet,path,prevMove,allowLMR=true){
-      if(Date.now()-searchStart>TIME_LIMIT)throw new Error('TO');nodes++;
-      const hash=hashState(st,p),base=baseKey(hash),rep=(path.get(base)||0)+1;
-      if(rep>=3||quiet>=100)return 0;
-      const ownWin=winningMoves(st,p);if(ownWin.length)return MATE-ply;
-      const enemy=opp(p),enemyWins=winningMoves(st,enemy);
-      const sk=stateKey(hash,quiet,Math.min(2,rep));
-      const cached=tt.get(sk),aOrig=alpha,bOrig=beta;
-      if(cached&&cached.depth>=depth){
-        if(cached.flag==='EXACT')return cached.value;
-        if(cached.flag==='LOWER')alpha=Math.max(alpha,cached.value);else if(cached.flag==='UPPER')beta=Math.min(beta,cached.value);
-        if(alpha>=beta)return cached.value;
-      }
-      let acts=generate(st,p);if(!acts.length)return -MATE+ply;
-      // Never search through an immediate opponent win unless the move removes every winning reply.
-      if(enemyWins.length){
-        const defs=[];for(let i=0;i<acts.length;i++)if(blocksAll(st,p,acts[i]))defs.push(acts[i]);
-        if(!defs.length)return -MATE+ply;acts=defs;
-      }
-      if(depth<=0)return qsearch(st,p,alpha,beta,QUIET_QDEPTH,ply,quiet,path,prevMove);
+    const base=p==='blue'?0:3,eb=enemy==='blue'?0:3;let pHand=0,eHand=0;
+    for(let t=0;t<3;t++){const ph=st.h[base+t],eh=st.h[eb+t];pHand+=ph;eHand+=eh;score+=(ph-eh)*(260+t*26);}
+    score+=(pHand-eHand)*135;
 
-      acts=orderActions(acts,st,p,depth,cached&&cached.bestMove?cached.bestMove:null,cached&&cached.bestKey?cached.bestKey:null,prevMove,enemyWins.length);
-      const endgame=countPieces(st.b)<=ENDGAME_PIECES;
-      let best=-Infinity,bestKey=null,prev=prevMove?actionKey(prevMove):'';
+    // Reserve-to-board tempo and drop quality.
+    let ownDrop=0,enemyDrop=0;const orows=p==='blue'?[5,6,7,8]:[0,1,2,3],erows=enemy==='blue'?[5,6,7,8]:[0,1,2,3];
+    for(let i=0;i<4;i++)for(let c=0;c<9;c++){if(st.b[idx(orows[i],c)]===0)ownDrop++;if(st.b[idx(erows[i],c)]===0)enemyDrop++;}
+    score+=(ownDrop-enemyDrop)*12 + (pHand-eHand)*22;
 
-      for(let i=0;i<acts.length;i++){
-        const a=acts[i],k=actionKey(a),ns=apply(st,p,a),hb=baseKey(hashState(ns,enemy)),pc=(path.get(hb)||0)+1;path.set(hb,pc);
-        const forcing=isForcing(a,st,p,enemyWins.length);
-        let childDepth=depth-1+(forcing?1:0)+(endgame&&forcing&&depth<16?1:0);
-        let v;
+    // Macro race, central control, defensive integrity.
+    score+=(ownPieces?((9-ownFront)*155):0) - (enemyPieces?((9-enemyFront)*155):0);
+    score+=(ownAdvanced-enemyAdvanced)*310;
+    score+=(ownMob-enemyMob)*18 + (ownAtk-enemyAtk)*35 + (ownSup-enemySup)*23;
+    score+=(enemyIsolated-ownIsolated)*26 + (enemyDanger-ownDanger)*20 + (ownCenter-enemyCenter)*10;
+    score+=(ownRace-enemyRace)*10;
 
-        if(i===0){
-          v=-search(ns,enemy,childDepth,-beta,-alpha,ply+1,(a.type==='drop'||isCapture(a,st))?0:quiet+1,path,a,true);
-        }else{
-          // Late Move Reductions: only quiet, non-critical moves after strong moves have been searched.
-          let reduction=0;
-          if(allowLMR&&depth>=8&&i>=6&&!forcing&&!endgame&&a.type==='move'&&!isCapture(a,st)&&Math.abs(a.tr-goal(p))>2){
-            reduction=(i>=18?2:1);if(depth>=14&&i>=30)reduction=2;
-          }
-          const rd=Math.max(0,childDepth-reduction);
-          v=-search(ns,enemy,rd,-alpha-1,-alpha,ply+1,(a.type==='drop'||isCapture(a,st))?0:quiet+1,path,a,true);
-          // PVS re-search only when the reduced/null window says this move may matter.
-          if(v>alpha&&v<beta)v=-search(ns,enemy,childDepth,-beta,-alpha,ply+1,(a.type==='drop'||isCapture(a,st))?0:quiet+1,path,a,true);
-          else if(reduction>0&&v>alpha)v=-search(ns,enemy,childDepth,-beta,-alpha,ply+1,(a.type==='drop'||isCapture(a,st))?0:quiet+1,path,a,false);
-        }
-        const prevc=path.get(hb)-1;if(prevc<=0)path.delete(hb);else path.set(hb,prevc);
-        if(v>best){best=v;bestKey=k;}
-        if(v>alpha)alpha=v;
-        if(beta<=alpha){
-          cutoffs++;noteKiller(depth,k);noteHistory(p,k,depth);
-          if(prev)counter.set(prev,k);
-          if(prev)cont.set(prev+'>'+k,Math.min(4000000,(cont.get(prev+'>'+k)||0)+depth*depth*2));
-          break;
-        }
-      }
-      let flag='EXACT';if(best<=aOrig)flag='UPPER';else if(best>=bOrig)flag='LOWER';
-      // Depth-preferred replacement, with a small generation preference for fresh results.
-      const old=tt.get(sk);
-      if(!old||old.depth<=depth||old.gen!==generation){
-        while(tt.size>=MAX_TT){const first=tt.keys().next().value;if(first===undefined)break;tt.delete(first);}
-        tt.set(sk,{value:best,depth:depth,flag,bestKey:bestKey,bestMove:acts.find(x=>actionKey(x)===bestKey)||null,gen:generation});
-      }
-      return best;
+    const ownW=threatCount(st,p,RACE_CAP),enemyW=threatCount(st,enemy,RACE_CAP);
+    if(ownW)score+=760000+Math.min(ownW,3)*28000;
+    if(enemyW)score-=900000+Math.min(enemyW,3)*32000;
+    if(ownW>=2)score+=30000;if(enemyW>=2)score-=38000;
+
+    return Math.round(score);
+  }
+
+  // ---------- search state ----------
+  let searchStart=0,nodes=0,stop=false,rootRep=1,rootKeyA=0,rootKeyB=0,gameSeed=0,rootMoveCount=0;
+  const killers=Array.from({length:MAX_PLY},()=>[null,null]);
+  const moveHistory=new Int32Array(6561);
+  const dropHistory=new Int32Array(243);
+  const pathA=new Uint32Array(MAX_PLY),pathB=new Uint32Array(MAX_PLY);
+
+  function isCapture(st,a){return a.type==='move'&&st.b[idx(a.tr,a.tc)]!==0;}
+  function materialCount(st){ let n=0; for(let i=0;i<81;i++) if(st.b[i]) n++; for(let i=0;i<6;i++) n+=st.h[i]; return n; }
+  function isRecapture(a,lastMove){ return !!(a&&lastMove&&a.type==='move'&&lastMove.type==='move'&&a.tr===lastMove.tr&&a.tc===lastMove.tc); }
+  function noteCutoff(a,depth){
+    const k=moveKey(a),add=Math.min(22000,depth*depth*24);
+    if(a.type==='move')moveHistory[k]=Math.min(400000,moveHistory[k]+add); else dropHistory[a.t*81+a.tr*9+a.tc]=Math.min(300000,dropHistory[a.t*81+a.tr*9+a.tc]+add);
+    if(depth>=1){if(!sameMove(killers[depth][0],a)){killers[depth][1]=killers[depth][0];killers[depth][0]=a;}}
+  }
+  function openingNoise(a,ply){
+    if(ply>10)return 0;
+    const k=mix32((moveKey(a)^gameSeed^((ply+1)*0x9e3779b9))>>>0);
+    // Only enough randomness to diversify equal-ish openings; never used to override a forcing win.
+    return (k%1000)/1000 * 18;
+  }
+  function scoreMove(st,p,a,depth,ttMove,enemyWins,ply){
+    if(sameMove(a,ttMove))return 80000000;
+    if(a.tr===goal(p))return 76000000;
+    let s=0;const capt=isCapture(st,a);
+    if(capt){
+      const target=st.b[idx(a.tr,a.tc)],victim=tOf(target),attacker=tOf(st.b[idx(a.fr,a.fc)]);
+      const victimV=[700,760,730][victim],attackerV=[700,760,730][attacker];
+      s+=1800000+victimV*900-attackerV*260;
+      s+=pieceAttackCount(st,a.tr,a.tc,p,attacker)*18000;
     }
-
-    function rootSearch(st,p,depth,alpha,beta,prevBest,rootQuiet,rootRep){
-      let acts=generate(st,p);if(!acts.length)return{best:null,value:-MATE+1,completed:true,scores:[]};
-      const ownWin=winningMoves(st,p);if(ownWin.length)return{best:ownWin[0],value:MATE-1,completed:true,scores:ownWin.map(a=>({action:a,value:MATE-1}))};
-      const enemyWins=winningMoves(st,opp(p));
-      if(enemyWins.length){
-        const defs=[];for(let i=0;i<acts.length;i++)if(blocksAll(st,p,acts[i]))defs.push(acts[i]);
-        if(!defs.length)return{best:acts[0],value:-MATE+1,completed:true,scores:[{action:acts[0],value:-MATE+1}]};acts=defs;
+    if(enemyWins>0)s+=30000000;
+    if(a.type==='drop'){
+      const fd=forwardDist(a.tr,p),k=a.t*81+a.tr*9+a.tc;
+      s+=170000+(8-fd)*160+(4-Math.abs(a.tc-4))*260;
+      s+=dropHistory[k]||0;
+      const code=codeOf(p,a.t);let adjE=0,adjF=0,threat=0;
+      for(let i=0;i<8;i++){const nr=a.tr+DIRS[i][0],nc=a.tc+DIRS[i][1];if(!inside(nr,nc))continue;const q=st.b[idx(nr,nc)];if(!q)continue;if(pOf(q)===p)adjF++;else if(canEatType(a.t,tOf(q))){adjE++;threat+=2;}else threat--;}
+      s+=adjE*8000+adjF*2600+threat*3400;
+      if(fd<=1)s+=16000;
+    }else{
+      const fd=forwardDist(a.tr,p);const src=st.b[idx(a.fr,a.fc)],t=tOf(src);
+      s+=(8-fd)*1500;
+      s+=pieceAttackCount(st,a.tr,a.tc,p,t)*2600 + pieceDefenseCount(st,a.tr,a.tc,p,t)*900;
+      // Prefer squares that improve both the race and local tactical safety.
+      const enemy=p==='blue'?'red':'blue';
+      let enemyCaptures=0, enemyGoalPressure=0;
+      for(let d=0;d<8;d++){
+        const nr=a.tr+DIRS[d][0],nc=a.tc+DIRS[d][1]; if(!inside(nr,nc))continue;
+        const q=st.b[idx(nr,nc)]; if(q&&pOf(q)===enemy&&canEatType(tOf(q),t)) enemyCaptures++;
       }
-      const rootHash=hashState(st,p),rootKey=stateKey(rootHash,rootQuiet||0,Math.max(1,Math.min(2,rootRep||1))),cached=tt.get(rootKey);
-      acts=orderActions(acts,st,p,depth,prevBest,cached&&cached.bestKey?cached.bestKey:null,null,enemyWins.length);
-
-      // Root forcing probe. Unlike the old engine, no random opening selection is used.
-      const rootScored=[];
-      for(let i=0;i<acts.length;i++){
-        const a=acts[i],ns=apply(st,p,a),ownThreat=(a.tr===goal(p)?99:threatCountAfter(st,p,a));
-        const enemyAfter=winningMoves(ns,opp(p)).length;
-        let s=ownThreat*2500000-enemyAfter*4000000;
-        if(isCapture(a,st))s+=800000;if(a.type==='drop')s+=(4-Math.abs(a.tc-4))*3000;
-        s-=i;
-        rootScored.push({a,score:s});
-      }
-      rootScored.sort((x,y)=>y.score-x.score);acts=rootScored.map(x=>x.a);
-
-      let best=acts[0],bestVal=-Infinity,scores=[];
-      for(let i=0;i<acts.length;i++){
-        if(Date.now()-searchStart>TIME_LIMIT)return{best,bestVal,value:bestVal,completed:false,scores};
-        const a=acts[i],ns=apply(st,p,a),hb=baseKey(hashState(ns,opp(p))),pc=(currentRootPath.get(hb)||0)+1;currentRootPath.set(hb,pc);
-        let v;
-        if(a.tr===goal(p))v=MATE-1;
-        else if(i===0)v=-search(ns,opp(p),depth-1,-beta,-alpha,1,(a.type==='drop'||isCapture(a,st))?0:(rootQuiet||0)+1,currentRootPath,a,true);
-        else{
-          v=-search(ns,opp(p),depth-1,-alpha-1,-alpha,1,(a.type==='drop'||isCapture(a,st))?0:(rootQuiet||0)+1,currentRootPath,a,true);
-          if(v>alpha&&v<beta)v=-search(ns,opp(p),depth-1,-beta,-alpha,1,(a.type==='drop'||isCapture(a,st))?0:(rootQuiet||0)+1,currentRootPath,a,true);
-        }
-        currentRootPath.set(hb,pc-1);if(pc-1<=0)currentRootPath.delete(hb);
-        scores.push({action:a,value:v});if(v>bestVal){bestVal=v;best=a;}if(v>alpha)alpha=v;
-      }
-      scores.sort((a,b)=>b.value-a.value);return{best,bestVal,value:bestVal,completed:true,scores};
+      if(enemyCaptures===0) s+=4200;
+      else s-=enemyCaptures*5200;
+      if(fd<=2) s+=2600;
+      s+=moveHistory[moveKey(a)]||0;
+      if(a.tr===goal(p))s+=10000000;
+      if(Math.abs(a.tr-a.fr)===2)s+=900;
     }
+    if(depth<MAX_PLY&&sameMove(killers[depth][0],a))s+=1400000;
+    else if(depth<MAX_PLY&&sameMove(killers[depth][1],a))s+=700000;
+    return s;
+  }
+  function orderMoves(st,p,acts,depth,ttMove,enemyWins,ply){
+    for(let i=0;i<acts.length;i++)acts[i]._score=scoreMove(st,p,acts[i],depth,ttMove,enemyWins,ply);
+    acts.sort((a,b)=>b._score-a._score);for(let i=0;i<acts.length;i++)delete acts[i]._score;return acts;
+  }
+  function repetitionDraw(keyA,keyB,ply){
+    let count=0;for(let i=0;i<=ply;i++)if(pathA[i]===keyA&&pathB[i]===keyB)count++;
+    if(keyA===rootKeyA&&keyB===rootKeyB)count+=Math.max(0,rootRep-1);return count>=3;
+  }
+  function tacticalMove(st,p,a,enemyWins){
+    if(a.tr===goal(p)||enemyWins>0)return true;
+    if(a.type==='move'&&st.b[idx(a.tr,a.tc)]!==0)return true;
+    if(a.type==='move'&&forwardDist(a.tr,p)<=2)return true;
+    if(a.type==='drop'&&forwardDist(a.tr,p)<=1)return true;
+    return false;
+  }
 
-    // One repetition path is shared by the complete recursive variation.
-    let currentRootPath=null;
+  function moveIsForcing(st,p,a,enemyWins){
+    if(enemyWins>0) return true;
+    if(a.tr===goal(p)) return true;
+    if(isCapture(st,a)) return true;
+    if(a.type==='move' && forwardDist(a.tr,p)<=2) return true;
+    if(a.type==='drop' && (forwardDist(a.tr,p)<=1 || immediateDropThreats(st,p,a.t)>=5)) return true;
+    return false;
+  }
+  function trimSearchMoves(st,p,acts,depth,enemyWins){
+    if(materialCount(st)<=7) return acts;
+    if(acts.length<=24 || depth<3) return acts;
+    const limit = depth>=8 ? 16 : (depth>=6 ? 18 : (depth>=4 ? 20 : 22));
+    const kept=[];
+    for(let i=0;i<acts.length;i++){
+      const a=acts[i];
+      if(i<limit || moveIsForcing(st,p,a,enemyWins)) kept.push(a);
+    }
+    return kept.length ? kept : acts.slice(0,Math.min(limit,acts.length));
+  }
 
-    function toExternal(a){if(!a)return null;if(a.type==='move')return{type:'move',from:{r:a.fr,c:a.fc},to:{r:a.tr,c:a.tc}};return{type:'drop',pieceType:TYPES[a.t],to:{r:a.tr,c:a.tc}};}
+  function qsearch(st,p,alpha,beta,ply,qply){
+    if((nodes&1023)===0&&Date.now()-searchStart>TIME_LIMIT){stop=true;throw new Error('TO');}
+    nodes++;const[keyA,keyB]=keyFor(st,p);if(repetitionDraw(keyA,keyB,ply))return DRAW;
+    const ownW=threatCount(st,p,1);if(ownW>0)return MATE-ply;
+    const enemy=opp(p),enemyW=threatCount(st,enemy,1);
+    if(enemyW>0){
+      const evasions=[];legalActs(st,p,evasions,enemyW);if(evasions.length===0)return -MATE+ply;
+      const tt=probeTT(keyA,keyB,ply);orderMoves(st,p,evasions,0,tt?tt.move:null,enemyW,ply);
+      for(let i=0;i<evasions.length;i++){const a=evasions[i],u=makeMove(st,p,a),v=-qsearch(st,enemy,-beta,-alpha,ply+1,qply+1);unmakeMove(st,p,u);if(v>=beta)return beta;if(v>alpha)alpha=v;}
+      return alpha;
+    }
+    const stand=evaluate(st,p);if(stand>=beta)return stand;if(stand>alpha)alpha=stand;if(qply>=6)return stand;
+    const acts=[],tactical=[];generateAll(st,p,acts);for(let i=0;i<acts.length;i++)if(tacticalMove(st,p,acts[i],0))tactical.push(acts[i]);
+    if(tactical.length===0)return stand;const tt=probeTT(keyA,keyB,ply);orderMoves(st,p,tactical,qply,tt?tt.move:null,0,ply);
+    for(let i=0;i<tactical.length;i++){const a=tactical[i],u=makeMove(st,p,a),v=-qsearch(st,enemy,-beta,-alpha,ply+1,qply+1);unmakeMove(st,p,u);if(v>=beta)return beta;if(v>alpha)alpha=v;}
+    return alpha;
+  }
 
-    self.onmessage=function(e){
-      const d=e.data||{};if(!d.board||!d.hands||!d.aiPlayer)return;
-      const st=fromInput(d.board,d.hands),ai=d.aiPlayer;rootSide=ai;
-      if((d.moveCount||0)===0)resetLearning();
-      searchStart=Date.now();nodes=0;cutoffs=0;currentRootPath=null;
-      const rootRep=Math.max(1,Math.min(2,d.rootRepetitionCount||1)),rootQuiet=Math.max(0,d.quietTurnCount||0),rootActs=generate(st,ai);
-      if(!rootActs.length){self.postMessage({bestAction:null});return;}
-      const immediate=winningMoves(st,ai);if(immediate.length){self.postMessage({bestAction:toExternal(immediate[0]),stats:{depth:0,nodes:0,reason:'immediate-win'}});return;}
+  function search(st,p,depth,alpha,beta,ply,lastMove,allowExtension){
+    if((nodes&1023)===0&&Date.now()-searchStart>TIME_LIMIT){stop=true;throw new Error('TO');}
+    nodes++;const[keyA,keyB]=keyFor(st,p);pathA[ply]=keyA;pathB[ply]=keyB;if(repetitionDraw(keyA,keyB,ply))return DRAW;
+    const ownW=threatCount(st,p,1);if(ownW>0)return MATE-ply;
+    const enemy=opp(p),enemyW=threatCount(st,enemy,1);
+    const ttSafe = rootRep <= 1;
+    const tt=ttSafe ? probeTT(keyA,keyB,ply) : null;
+    let ttMove=null;
+    if(tt){ttMove=tt.move;if(tt.depth>=depth){if(tt.flag===1)return tt.val;if(tt.flag===2&&tt.val>=beta)return tt.val;if(tt.flag===3&&tt.val<=alpha)return tt.val;}}
+    if(depth<=0)return qsearch(st,p,alpha,beta,ply,0);
 
-      let best=rootActs[0],bestVal=-Infinity,bestScores=[],completedDepth=0,prevBest=null;
-      const endgame=countPieces(st.b)<=ENDGAME_PIECES,maxDepth=endgame?ENDGAME_MAX_DEPTH:NORMAL_MAX_DEPTH;
-      for(let depth=1;depth<=maxDepth;depth++){
-        if(Date.now()-searchStart>TIME_LIMIT)break;
-        let alpha=-Infinity,beta=Infinity,asp=null;
-        if(completedDepth>=4&&Number.isFinite(bestVal)){
-          const margin=Math.max(180,Math.min(5000,Math.abs(bestVal)*0.045+140));asp=margin;alpha=bestVal-margin;beta=bestVal+margin;
+    const acts=[];legalActs(st,p,acts,enemyW);if(acts.length===0)return -MATE+ply;orderMoves(st,p,acts,depth,ttMove,enemyW,ply);
+    const searchActs=trimSearchMoves(st,p,acts,depth,enemyW);
+    const origAlpha=alpha;let best=-Infinity,bestMove=null;
+
+    for(let i=0;i<searchActs.length;i++){
+      const a=searchActs[i],capture=isCapture(st,a),recapture=isRecapture(a,lastMove),u=makeMove(st,p,a);let v;const forcing=tacticalMove(st,p,a,enemyW)||capture;
+      const extension=((forcing||recapture)&&allowExtension&&depth<=11&&depth>=2)?1:0;
+      const nextDepth=depth-1+extension;
+      const childAllowExtension=!extension;
+      const quiet=!forcing&&!capture;
+      if(i>=4&&depth>=5&&quiet){
+        // Late move reduction: spend depth on forcing moves, but re-search any quiet move
+        // that proves better than the current alpha bound.
+        v=-search(st,enemy,Math.max(0,nextDepth-1),-alpha-1,-alpha,ply+1,a,childAllowExtension);
+        if(v>alpha&&v<beta){
+          v=-search(st,enemy,nextDepth,-beta,-alpha,ply+1,a,childAllowExtension);
         }
-        let rs;
-        try{
-          currentRootPath=new Map();const rootBase=baseKey(hashState(st,ai));currentRootPath.set(rootBase,Math.max(1,Math.min(2,rootRep)));
-          rs=rootSearch(st,ai,depth,alpha,beta,prevBest,rootQuiet,rootRep);
-          if(!rs.completed)break;
-          if(asp!==null&&(rs.value<=alpha||rs.value>=beta)){
-            currentRootPath=new Map();currentRootPath.set(rootBase,Math.max(1,Math.min(2,rootRep)));
-            rs=rootSearch(st,ai,depth,-Infinity,Infinity,prevBest,rootQuiet,rootRep);if(!rs.completed)break;
-          }
-        }catch(err){if(err.message==='TO')break;throw err;}
-        best=rs.best;bestVal=rs.value;bestScores=rs.scores;prevBest=best;completedDepth=depth;
-        if(Math.abs(bestVal)>=MATE-1000000)break;
-      }
-
-      // Verification pass when the top two moves are genuinely close.
-      if(bestScores.length>=2&&Date.now()-searchStart<TIME_LIMIT-700&&completedDepth>=5&&Math.abs(bestScores[0].value-bestScores[1].value)<700){
-        try{
-          currentRootPath=new Map();currentRootPath.set(baseKey(hashState(st,ai)),Math.max(1,Math.min(2,rootRep)));
-          const v=rootSearch(st,ai,Math.min(maxDepth,completedDepth+2),-Infinity,Infinity,best,rootQuiet,rootRep);
-          if(v.completed){best=v.best;bestVal=v.value;bestScores=v.scores;completedDepth=Math.min(maxDepth,completedDepth+2);}
-        }catch(err){if(err.message!=='TO')throw err;}
-      }
-      // First-move variety: randomly select from a small pool of genuinely
-      // competitive opening moves, preferring openings that have not appeared
-      // in recent games. This adds variety without deliberately making a bad move.
-      if((d.moveCount||0)===0 && bestScores.length>1 && completedDepth>=1){
-        const top=bestScores.slice().sort((a,b)=>b.value-a.value);
-        const ceiling=top[0].value;
-        const pool=top.filter(x=>x.value>=ceiling-900).slice(0,5);
-        const fresh=pool.filter(x=>!openingHistory.has(actionKey(x.action)));
-        const choices=fresh.length?fresh:pool;
-        if(choices.length>1){
-          const pick=choices[rnd32()%choices.length];
-          best=pick.action;bestVal=pick.value;
-          openingHistory.add(actionKey(best));
-          if(openingHistory.size>18){
-            const first=openingHistory.values().next().value;
-            if(first!==undefined)openingHistory.delete(first);
-          }
-        }else if(choices.length===1){
-          best=choices[0].action;
-          openingHistory.add(actionKey(best));
-        }
-      }
-      // ===== STRATEGIC PLAN LAYER =====
-      // The tactical search above finds strong moves. This layer asks a second
-      // question: "What position am I trying to create over the next few turns?"
-      // It keeps a short-lived plan and prefers moves that preserve a coherent
-      // winning route, while allowing tactical calculation to override it.
-      function planFeatures(st, p, a) {
-        const ns = apply(st, p, a), e = opp(p), g = goal(p);
-        const ownWin = winningMoves(ns, p).length;
-        const enemyWin = winningMoves(ns, e).length;
-        let progress = 0, mobility = 0, pressure = 0, safe = 0, central = 0;
-        for(let r=0;r<9;r++) for(let c=0;c<9;c++) {
-          const code=ns.b[idx(r,c)]; if(!code) continue;
-          const q=pOf(code), t=tOf(code), own=q===p;
-          const ms=[]; movesFrom(r,c,ns,q,ms);
-          if(own) {
-            mobility += ms.length;
-            progress += 8-Math.abs(r-g);
-            central += 4-Math.abs(c-4);
-            for(let k=0;k<ms.length;k++) if(ms[k].tr===g) pressure++;
-            let danger=0;
-            for(let k=0;k<8;k++){
-              const nr=r+DIRS[k][0], nc=c+DIRS[k][1];
-              if(inside(nr,nc)){
-                const q2=ns.b[idx(nr,nc)];
-                if(q2 && pOf(q2)!==p && canEatType(tOf(q2),t)) danger++;
-              }
-            }
-            safe += Math.max(0,2-danger);
-          }
-        }
-        // A "plan" is stronger when it creates a route, limits counterplay,
-        // and improves several pieces at once instead of only gaining material.
-        return {
-          win: ownWin,
-          enemyWin,
-          progress,
-          mobility,
-          pressure,
-          safe,
-          central,
-          score:
-            ownWin*50000000 - enemyWin*60000000 +
-            pressure*9000 + progress*170 + mobility*45 +
-            safe*120 + central*8 +
-            (a.type==='move' && a.tr===g ? 180000 : 0) +
-            (isCapture(a,st) ? 2500 : 0)
-        };
-      }
-
-      function strategicRecheck(st, p, candidateList, tacticalBest) {
-        if(!candidateList || candidateList.length < 2) return tacticalBest;
-        const top = candidateList.slice().sort((x,y)=>y.value-x.value).slice(0,5);
-        const scored = [];
-        for(let i=0;i<top.length;i++){
-          const a=top[i].action;
-          const f=planFeatures(st,p,a);
-          // Tactical score remains dominant. Planning is a tie-break / plan-
-          // coherence layer, never permission to walk into a forced loss.
-          const tacticalGap = top[0].value - top[i].value;
-          let v = top[i].value + f.score*0.018 - tacticalGap*0.35;
-          if(f.enemyWin>0) v -= 25000000;
-          if(f.win>0) v += 30000000;
-          scored.push({a,v,f});
-        }
-        scored.sort((x,y)=>y.v-x.v);
-
-        // Keep the tactical best if the planner's alternative is materially worse.
-        const winner=scored[0], tactical=scored.find(x=>sameMove(x.a,tacticalBest));
-        if(!tactical) return winner.a;
-        if(tactical.f.enemyWin>0 && winner.f.enemyWin===0) return winner.a;
-        return winner.v >= tactical.v-1200 ? winner.a : tacticalBest;
-      }
-
-      // Re-plan from the actual current position after every completed search.
-      // This deliberately happens after tactical search, so strategy cannot
-      // override a forced win/loss.
-      if(bestScores.length>=2 && Date.now()-searchStart<TIME_LIMIT-180) {
-        try {
-          best = strategicRecheck(st, ai, bestScores, best);
-        } catch(err) {
-          // Planning is optional; never let it break the core engine.
-          console.warn('Strategic planner skipped:', err);
+      }else if(i===0){
+        v=-search(st,enemy,nextDepth,-beta,-alpha,ply+1,a,childAllowExtension);
+      }else{
+        v=-search(st,enemy,nextDepth,-alpha-1,-alpha,ply+1,a,childAllowExtension);
+        if(v>alpha&&v<beta){
+          v=-search(st,enemy,nextDepth,-beta,-alpha,ply+1,a,childAllowExtension);
         }
       }
+      unmakeMove(st,p,u);
+      if(v>best){best=v;bestMove=a;}if(v>alpha)alpha=v;
+      if(alpha>=beta){noteCutoff(a,depth);break;}
+    }
+    let flag=1;if(best<=origAlpha)flag=3;else if(best>=beta)flag=2;if(ttSafe) storeTT(keyA,keyB,depth,best,flag,bestMove,ply);return best;
+  }
 
-      self.postMessage({bestAction:toExternal(best),stats:{
-        depth:completedDepth,nodes:nodes,cutoffs:cutoffs,score:bestVal,
-        endgame:endgame,planner:true
-      }});
-    };
-  `;
+  function rootSearch(st,p,depth,previousScore,preferredMove,ply){
+    const enemy=opp(p),enemyWins=threatCount(st,enemy,1),acts=[];legalActs(st,p,acts,enemyWins);if(acts.length===0)return{score:-MATE,move:null};
+    orderMoves(st,p,acts,depth,preferredMove,enemyWins,ply);
+    if((ply===0) && depth<=3 && (rootMoveCount||0)<4 && acts.length>1){
+      const forcedExists = acts.some(a=>moveIsForcing(st,p,a,enemyWins));
+      if(!forcedExists){
+        for(let i=0;i<acts.length;i++) acts[i]._score=openingNoise(acts[i],ply);
+        acts.sort((a,b)=>((b._score||0)-(a._score||0)));
+        for(let i=0;i<acts.length;i++) delete acts[i]._score;
+      }
+    }
+    let alpha=-Infinity,beta=Infinity;const useAsp=depth>=4&&Number.isFinite(previousScore);if(useAsp){alpha=previousScore-650;beta=previousScore+650;}
+    for(let attempt=0;attempt<2;attempt++){
+      let best=-Infinity,bestMove=null,a0=alpha,b0=beta;
+      const lowMaterial = materialCount(st)<=7;
+      const baseLimit = lowMaterial ? acts.length : (depth>=7 ? Math.min(14,acts.length) : (depth>=5 ? Math.min(18,acts.length) : (depth===4 ? Math.min(20,acts.length) : (depth===3 ? Math.min(22,acts.length) : acts.length))));
+      const rootActs=[];
+      for(let i=0;i<acts.length;i++) if(i<baseLimit || moveIsForcing(st,p,acts[i],enemyWins)) rootActs.push(acts[i]);
+      const candidates=[];
+      for(let i=0;i<rootActs.length;i++){
+        const a=rootActs[i],u=makeMove(st,p,a);
+        const v=-search(st,enemy,depth-1,-b0,-a0,1,a,true);unmakeMove(st,p,u);
+        candidates.push({move:a,score:v,order:i});
+        if(v>best){best=v;bestMove=a;}if(v>a0)a0=v;if(a0>=b0)break;
+      }
+      candidates.sort((x,y)=>y.score-x.score);
+      if(!useAsp|| (best>alpha&&best<beta))return{score:best,move:bestMove,candidates:candidates.slice(0,5)};
+      alpha=-Infinity;beta=Infinity;
+    }
+    return{score:0,move:null};
+  }
+
+  function toExternal(a){if(!a)return null;if(a.type==='move')return{type:'move',from:{r:a.fr,c:a.fc},to:{r:a.tr,c:a.tc}};return{type:'drop',pieceType:TYPES[a.t],to:{r:a.tr,c:a.tc}};}
+  function antiBlunderAudit(st,p,candidates,baseScore,depthBudget){
+    if(!candidates||!candidates.length)return null;
+    let best=null,bestScore=-Infinity;
+    const enemy=opp(p);
+    const auditDepth=Math.max(1,Math.min(3,depthBudget||2));
+    for(let i=0;i<Math.min(4,candidates.length);i++){
+      if(Date.now()-searchStart>TIME_LIMIT-350)break;
+      const a=candidates[i].move;if(!a)continue;
+      const u=makeMove(st,p,a);
+      let score;
+      try{
+        const enemyWins=winningMoves(st,enemy,[]);
+        if(enemyWins.length) score=-MATE+2;
+        else {
+          const enemyThreat=threatCount(st,enemy,1);
+          // Verify the opponent's strongest immediate reply before trusting the root score.
+          score=-search(st,enemy,auditDepth,-MATE,MATE,1,a,true);
+          if(enemyThreat>0) score-=220;
+        }
+      }catch(err){unmakeMove(st,p,u);if(err&&err.message==='TO')break;throw err;}
+      unmakeMove(st,p,u);
+      // Never let a shallow audit overturn a clearly winning tactical result unless it finds
+      // an immediate loss. Otherwise use it only to catch suspiciously fragile moves.
+      const immediateLoss=score<=-MATE+10;
+      if(immediateLoss)continue;
+      const adjusted=score + Math.min(120,Math.max(0,candidates[i].score-baseScore+120));
+      if(best===null || adjusted>bestScore){best=a;bestScore=adjusted;}
+    }
+    return best;
+  }
+
+
+  self.onmessage=function(e){
+    const d=e.data||{};if(!d.board||!d.hands||!d.aiPlayer)return;
+    const st=fromInput(d.board,d.hands),ai=d.aiPlayer;
+    if((d.moveCount||0)===0){clearTT();moveHistory.fill(0);dropHistory.fill(0);for(let i=0;i<killers.length;i++){killers[i][0]=null;killers[i][1]=null;}}
+    gameSeed=mix32(Number(d.openingSeed)||((Date.now()^Math.floor(Math.random()*0xffffffff))>>>0));
+    rootMoveCount=Number(d.moveCount)||0;
+    searchStart=Date.now();nodes=0;stop=false;rootRep=Math.max(1,Number(d.rootRepetitionCount)||1);
+    const rk=keyFor(st,ai);rootKeyA=rk[0];rootKeyB=rk[1];pathA.fill(0);pathB.fill(0);
+    const rootActs=[];const enemyWins=threatCount(st,opp(ai),1);legalActs(st,ai,rootActs,enemyWins);
+    if(rootActs.length===0){self.postMessage({bestAction:null,stats:{depth:0,nodes,score:-MATE,engine:'SSS Ultimate Anti-Blunder Engine v6'}});return;}
+    const immediate=winningMoves(st,ai,[]);if(immediate.length>0){
+      self.postMessage({bestAction:toExternal(immediate[0]),stats:{depth:1,nodes:1,score:MATE,engine:'SSS Ultimate Anti-Blunder Engine v6'}});return;
+    }
+    let bestMove=rootActs[0],bestVal=-Infinity,completedDepth=0,previousScore=0,preferredMove=null;
+    // Search deeper while preserving a fully completed best move on timeout.
+    for(let depth=1;depth<=40;depth++){
+      if(Date.now()-searchStart>TIME_LIMIT)break;
+      try{
+        const result=rootSearch(st,ai,depth,completedDepth>1?previousScore:NaN,preferredMove,0);
+        if(result.move){bestMove=result.move;bestVal=result.score;previousScore=result.score;preferredMove=result.move;}
+        completedDepth=depth;
+        // Final anti-blunder verification: re-check the strongest few root candidates from
+        // the completed iteration against the opponent's best immediate reply. This is a
+        // targeted verification search, not a second full root search.
+        if(depth>=3 && result.candidates && Date.now()-searchStart>TIME_LIMIT-1200){
+          const audited=antiBlunderAudit(st,ai,result.candidates,bestVal,Math.min(3,depth-1));
+          if(audited)bestMove=audited;
+        }
+        if(Math.abs(bestVal)>=MATE-100)break;
+      }catch(err){if(err&&err.message==='TO')break;throw err;}
+    }
+    self.postMessage({bestAction:toExternal(bestMove),stats:{depth:completedDepth,nodes,score:bestVal,engine:'SSS Ultimate Anti-Blunder Engine v6'}});
+  };
+`;
 
   const blob = new Blob([workerCode], { type: 'application/javascript' });
   const aiWorker = new Worker(URL.createObjectURL(blob));
@@ -1164,6 +1210,7 @@
   const audioEl = document.getElementById('bgmAudio');
 
   let moveHistory = [];
+  let pveOpeningSeed = 0;
   let viewHistoryIndex = -1;
   let drawPositionCounts = new Map();
   let quietTurnCount = 0;
@@ -1650,7 +1697,7 @@
     if(!gameOver && gameMode==='pve' && turn!==playerSide) triggerAIMove();
   }
 
-  function triggerAIMove() { if(!gameOver) { const repKey=getDrawPositionKey(); aiWorker.postMessage({board, hands, aiPlayer:turn, moveCount:moveHistory.length, rootRepetitionCount:drawPositionCounts.get(repKey)||1, quietTurnCount}); } }
+  function triggerAIMove() { if(!gameOver) { const repKey=getDrawPositionKey(); aiWorker.postMessage({board, hands, aiPlayer:turn, moveCount:moveHistory.length, rootRepetitionCount:drawPositionCounts.get(repKey)||1, quietTurnCount, openingSeed:pveOpeningSeed}); } }
   function executeAIAction(a) { applyActionToBoard(a); }
 
   function endDraw(msg) {
