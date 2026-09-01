@@ -230,13 +230,27 @@
       
       @media (max-width: 768px) {
         .online-game-controls {
-          position: absolute;
-          top: 10px;
-          right: 10px;
-          z-index: 100;
-          width: auto;
-          justify-content: flex-end;
-          margin-bottom: 0;
+          position: relative;
+          top: auto;
+          right: auto;
+          z-index: 20;
+          width: 100%;
+          max-width: calc(100vw - 24px);
+          justify-content: center;
+          margin: 4px auto 0;
+          padding: 0;
+          pointer-events: auto;
+          touch-action: manipulation;
+        }
+        .online-game-controls .btn-resign,
+        .online-game-controls .btn-draw,
+        .online-game-controls .online-chat-toggle {
+          position: relative;
+          z-index: 21;
+          pointer-events: auto;
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
+          user-select: none;
         }
       }
     .online-game-controls.visible { display: flex; }
@@ -404,7 +418,7 @@
       .status-badge { padding: 7px 12px; font-size: 12px; max-width: calc(100vw - 132px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .btn-flip { padding: 7px 10px; font-size: 12px; }
       .online-game-controls { width: auto; justify-content: center; margin-bottom: 0; }
-      .btn-resign, .btn-draw { padding: 7px 10px; font-size: 12px; }
+      .btn-resign, .btn-draw { padding: 9px 11px; font-size: 12px; min-height: 38px; }
       #onlineMenuScreen .modal-box { width: min(100%, 520px); max-height: calc(100vh - 28px); overflow-y: auto; padding: 20px 14px; }
       #onlineMenuScreen .btn { min-width: 0; padding: clamp(11px, 3vw, 16px) clamp(12px, 5vw, 28px); font-size: clamp(13px, 3.5vw, 16px); }
       #onlineMenuScreen .btn-group { max-width: min(100%, 360px); }
@@ -578,8 +592,8 @@
         <div class="status-badge" id="statusBar">Waiting to Start</div>
         <button class="btn-flip" onclick="toggleBoardFlip()">🔄 Flip Board</button>
         <div class="online-game-controls" id="onlineGameControls">
-          <button class="btn-resign" onclick="resignCurrentGame()">Resign</button>
-          <button class="btn-draw" id="offerDrawBtn" onclick="offerDraw()" style="display:none;">Offer Draw</button>
+          <button type="button" class="btn-resign" id="resignGameBtn" onclick="resignCurrentGame()">Resign</button>
+          <button type="button" class="btn-draw" id="offerDrawBtn" onclick="offerDraw()" style="display:none;">Offer Draw</button>
           <button class="online-chat-toggle" id="onlineChatToggle" onclick="toggleOnlineChat()">💬 Chat<span class="chat-unread-dot" id="chatUnreadDot"></span></button>
         </div>
         <button class="btn" id="mainMenuButton" style="padding: 6px 14px; font-size: 13px;" onclick="showStartScreen()">Main Menu</button>
@@ -625,19 +639,18 @@
     document.getElementById('customAlertScreen').classList.add('hidden');
   }
 
-const workerCode = `
-  // SSS CUSTOM ENGINE v5 - hardened tactical solver
-  // Actual rules: 9x9, RPS capture, friendly jump, reserve drops,
-  // breakthrough victory and no-move victory.
+const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-blunder search
+  // Rules: 9x9 board, RPS captures, one-square moves, friendly jumps, reserve drops,
+  // breakthrough victory, no-move victory, threefold repetition and 50-move draw.
   const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
   const TYPES = ['rock','paper','scissors'];
-  const TIDX = {rock:0, paper:1, scissors:2};
+  const TIDX = {rock:0,paper:1,scissors:2};
   const EMPTY = 0;
   const MATE = 9000000;
   const DRAW = 0;
   const TIME_LIMIT = 6200;
-  const MAX_PLY = 96;
-  const RACE_CAP = 3;
+  const MAX_PLY = 128;
+  const Q_MAX = 10;
 
   // ---------- deterministic hash / Zobrist ----------
   let seed = 0x9e3779b9 >>> 0;
@@ -659,545 +672,512 @@ const workerCode = `
   const ZB = Array.from({length: 7}, () => new Uint32Array(81));
   const HA = Array.from({length: 6}, () => new Uint32Array(10));
   const HB = Array.from({length: 6}, () => new Uint32Array(10));
+  const ZQ_A = new Uint32Array(101), ZQ_B = new Uint32Array(101);
   const TURN_A = rnd32(), TURN_B = rnd32();
-  for(let c=0;c<7;c++) for(let s=0;s<81;s++) { ZA[c][s]=rnd32(); ZB[c][s]=rnd32(); }
-  for(let i=0;i<6;i++) for(let n=0;n<10;n++) { HA[i][n]=rnd32(); HB[i][n]=rnd32(); }
+  for(let c=0;c<7;c++) for(let s=0;s<81;s++){ ZA[c][s]=rnd32(); ZB[c][s]=rnd32(); }
+  for(let i=0;i<6;i++) for(let n=0;n<10;n++){ HA[i][n]=rnd32(); HB[i][n]=rnd32(); }
+  for(let n=0;n<=100;n++){ ZQ_A[n]=rnd32(); ZQ_B[n]=rnd32(); }
 
-  // ---------- transposition table ----------
-  const TT_SIZE = 1 << 21;
-  const TT_MASK = TT_SIZE - 1;
-  const ttKeyA = new Uint32Array(TT_SIZE);
-  const ttKeyB = new Uint32Array(TT_SIZE);
-  const ttVal = new Int32Array(TT_SIZE);
-  const ttDepth = new Int8Array(TT_SIZE);
-  const ttFlags = new Uint8Array(TT_SIZE); // 0 empty, 1 exact, 2 lower, 3 upper
-  const ttMoveType = new Int8Array(TT_SIZE); // 0 move, 1 drop, -1 none
-  const ttMoveFrom = new Int8Array(TT_SIZE);
-  const ttMoveTo = new Int8Array(TT_SIZE);
-  const ttMovePiece = new Int8Array(TT_SIZE);
-
-  function clearTT() { ttKeyA.fill(0); ttKeyB.fill(0); ttFlags.fill(0); }
-  function isMateScore(v){ return Math.abs(v) > MATE-10000; }
-  function ttStoreScore(v,ply){
-    if(v >= MATE-10000) return v + ply;
-    if(v <= -MATE+10000) return v - ply;
-    return v;
+  // ---------- transposition table: 2-way set associative ----------
+  const TT_SETS = 1 << 20;
+  const TT_WAYS = 2;
+  const TT_SIZE = TT_SETS * TT_WAYS;
+  const ttKeyA = new Uint32Array(TT_SIZE), ttKeyB = new Uint32Array(TT_SIZE);
+  const ttVal = new Int32Array(TT_SIZE), ttDepth = new Int8Array(TT_SIZE);
+  const ttFlags = new Uint8Array(TT_SIZE), ttAge = new Uint8Array(TT_SIZE);
+  const ttMoveType = new Int8Array(TT_SIZE), ttMoveFrom = new Int8Array(TT_SIZE), ttMoveTo = new Int8Array(TT_SIZE), ttMovePiece = new Int8Array(TT_SIZE);
+  let ttGeneration=1;
+  function clearTT(){ ttFlags.fill(0); ttAge.fill(0); ttGeneration=(ttGeneration+1)&255; if(ttGeneration===0)ttGeneration=1; }
+  function ttStoreScore(v,ply){ if(v>=MATE-10000)return v+ply; if(v<=-MATE+10000)return v-ply; return v; }
+  function ttLoadScore(v,ply){ if(v>=MATE-10000)return v-ply; if(v<=-MATE+10000)return v+ply; return v; }
+  function ttIndex(keyA,way){ return ((keyA&(TT_SETS-1))*TT_WAYS)+way; }
+  function storeTT(keyA,keyB,depth,val,flag,move,ply){
+    const base=(keyA&(TT_SETS-1))*TT_WAYS;
+    let n=base, n1=base+1;
+    if(ttFlags[n] && ttKeyA[n]===keyA && ttKeyB[n]===keyB){}
+    else if(ttFlags[n1] && ttKeyA[n1]===keyA && ttKeyB[n1]===keyB)n=n1;
+    else if(!ttFlags[n]) n=n;
+    else if(!ttFlags[n1]) n=n1;
+    else n=(ttDepth[n1]-ttDepth[n] > 0 || ttAge[n]<ttAge[n1]) ? n : n1;
+    if(ttFlags[n] && ttKeyA[n]===keyA && ttKeyB[n]===keyB && ttDepth[n]>depth)return;
+    ttKeyA[n]=keyA; ttKeyB[n]=keyB; ttDepth[n]=Math.max(-128,Math.min(127,depth)); ttVal[n]=ttStoreScore(val,ply); ttFlags[n]=flag; ttAge[n]=ttGeneration;
+    if(move){
+      ttMoveType[n]=move.type==='move'?0:1;
+      ttMoveFrom[n]=move.type==='move'?(move.fr*9+move.fc):-1;
+      ttMoveTo[n]=move.tr*9+move.tc;
+      ttMovePiece[n]=move.type==='drop'?move.t:-1;
+    } else { ttMoveType[n]=-1;ttMoveFrom[n]=-1;ttMoveTo[n]=-1;ttMovePiece[n]=-1; }
   }
-  function ttLoadScore(v,ply){
-    if(v >= MATE-10000) return v - ply;
-    if(v <= -MATE+10000) return v + ply;
-    return v;
-  }
-  function storeTT(keyA,keyB,depth,val,flag,move,ply) {
-    const n = keyA & TT_MASK;
-    if(ttFlags[n]!==0 && ttKeyA[n]===keyA && ttKeyB[n]===keyB && ttDepth[n]>depth) return;
-    ttKeyA[n]=keyA; ttKeyB[n]=keyB; ttDepth[n]=depth; ttVal[n]=ttStoreScore(val,ply); ttFlags[n]=flag;
-    if(move) {
-      ttMoveType[n] = move.type==='move' ? 0 : 1;
-      ttMoveFrom[n] = move.type==='move' ? (move.fr*9+move.fc) : -1;
-      ttMoveTo[n] = move.tr*9+move.tc;
-      ttMovePiece[n] = move.type==='drop' ? move.t : -1;
-    } else {
-      ttMoveType[n]=-1; ttMoveFrom[n]=-1; ttMoveTo[n]=-1; ttMovePiece[n]=-1;
+  function probeTT(keyA,keyB,ply){
+    const base=(keyA&(TT_SETS-1))*TT_WAYS;
+    for(let k=0;k<2;k++){
+      const n=base+k;
+      if(ttFlags[n] && ttKeyA[n]===keyA && ttKeyB[n]===keyB){
+        let move=null;
+        if(ttMoveType[n]===0){const f=ttMoveFrom[n],t=ttMoveTo[n];move={type:'move',fr:(f/9)|0,fc:f%9,tr:(t/9)|0,tc:t%9};}
+        else if(ttMoveType[n]===1){const t=ttMoveTo[n];move={type:'drop',t:ttMovePiece[n],tr:(t/9)|0,tc:t%9};}
+        ttAge[n]=ttGeneration;
+        return {depth:ttDepth[n],val:ttLoadScore(ttVal[n],ply),flag:ttFlags[n],move};
+      }
     }
-  }
-  function probeTT(keyA,keyB,ply) {
-    const n=keyA&TT_MASK;
-    if(ttFlags[n]===0 || ttKeyA[n]!==keyA || ttKeyB[n]!==keyB) return null;
-    let move=null;
-    if(ttMoveType[n]===0) {
-      const f=ttMoveFrom[n], t=ttMoveTo[n];
-      move={type:'move',fr:Math.floor(f/9),fc:f%9,tr:Math.floor(t/9),tc:t%9};
-    } else if(ttMoveType[n]===1) {
-      const t=ttMoveTo[n]; move={type:'drop',t:ttMovePiece[n],tr:Math.floor(t/9),tc:t%9};
-    }
-    return {depth:ttDepth[n],val:ttLoadScore(ttVal[n],ply),flag:ttFlags[n],move};
+    return null;
   }
 
   // ---------- game primitives ----------
-  function pOf(code){ return code===0?null:(code<=3?'blue':'red'); }
-  function tOf(code){ return code<=0?-1:(code<=3?code-1:code-4); }
-  function codeOf(p,t){ return p==='blue'?t+1:t+4; }
-  function opp(p){ return p==='blue'?'red':'blue'; }
-  function goal(p){ return p==='blue'?0:8; }
-  function inside(r,c){ return r>=0&&r<9&&c>=0&&c<9; }
-  function idx(r,c){ return r*9+c; }
-  function canEatType(a,d){ return (a===2&&d===1)||(a===1&&d===0)||(a===0&&d===2); }
-  function forwardDist(r,p){ return p==='blue'?r:8-r; }
+  function pOf(code){return code===0?null:(code<=3?'blue':'red');}
+  function tOf(code){return code<=0?-1:(code<=3?code-1:code-4);}
+  function codeOf(p,t){return p==='blue'?t+1:t+4;}
+  function opp(p){return p==='blue'?'red':'blue';}
+  function goal(p){return p==='blue'?0:8;}
+  function inside(r,c){return r>=0&&r<9&&c>=0&&c<9;}
+  function idx(r,c){return r*9+c;}
+  function canEatType(a,d){return (a===2&&d===1)||(a===1&&d===0)||(a===0&&d===2);}
+  function forwardDist(r,p){return p==='blue'?r:8-r;}
   function sameMove(a,b){
-    if(!a||!b||a.type!==b.type) return false;
-    if(a.type==='move') return a.fr===b.fr&&a.fc===b.fc&&a.tr===b.tr&&a.tc===b.tc;
+    if(!a||!b||a.type!==b.type)return false;
+    if(a.type==='move')return a.fr===b.fr&&a.fc===b.fc&&a.tr===b.tr&&a.tc===b.tc;
     return a.t===b.t&&a.tr===b.tr&&a.tc===b.tc;
   }
-  function moveKey(a){ return a.type==='drop' ? 6561+a.t*81+a.tr*9+a.tc : idx(a.fr,a.fc)*81+idx(a.tr,a.tc); }
-  function fromInput(board,hands){
-    const b=new Uint8Array(81), h=new Uint8Array(6);
-    for(let r=0;r<9;r++) for(let c=0;c<9;c++){ const q=board[r][c]; if(q) b[idx(r,c)]=codeOf(q.player,TIDX[q.type]); }
-    for(let i=0;i<hands.blue.length;i++) h[TIDX[hands.blue[i]]]++;
-    for(let i=0;i<hands.red.length;i++) h[3+TIDX[hands.red[i]]]++;
-    const st={b,h,keyA:0,keyB:0}; let a=0,bh=0;
-    for(let s=0;s<81;s++){ const c=b[s]; if(c){a^=ZA[c][s];bh^=ZB[c][s];} }
-    for(let i=0;i<6;i++){ const n=h[i];a^=HA[i][n];bh^=HB[i][n]; }
-    st.keyA=a>>>0; st.keyB=bh>>>0; return st;
+  function moveKey(a){return a.type==='drop'?6561+a.t*81+a.tr*9+a.tc:idx(a.fr,a.fc)*81+idx(a.tr,a.tc);}
+
+  function fromInput(board,hands,quietTurnCount){
+    const b=new Uint8Array(81),h=new Uint8Array(6);let a=0,bh=0;
+    for(let r=0;r<9;r++)for(let c=0;c<9;c++){const q=board[r][c];if(q){const code=codeOf(q.player,TIDX[q.type]);b[idx(r,c)]=code;a^=ZA[code][idx(r,c)];bh^=ZB[code][idx(r,c)];}}
+    for(let i=0;i<hands.blue.length;i++)h[TIDX[hands.blue[i]]]++;
+    for(let i=0;i<hands.red.length;i++)h[3+TIDX[hands.red[i]]]++;
+    for(let i=0;i<6;i++){const n=h[i];a^=HA[i][n];bh^=HB[i][n];}
+    const q=Math.max(0,Math.min(100,quietTurnCount|0));a^=ZQ_A[q];bh^=ZQ_B[q];
+    return {b,h,quiet:q,keyA:a>>>0,keyB:bh>>>0};
   }
-  function keyFor(st,p){ return p==='blue'?[(st.keyA^TURN_A)>>>0,(st.keyB^TURN_B)>>>0]:[st.keyA>>>0,st.keyB>>>0]; }
-  function xorPiece(st,code,sq){ st.keyA=(st.keyA^ZA[code][sq])>>>0; st.keyB=(st.keyB^ZB[code][sq])>>>0; }
-  function xorHand(st,slot,count){ st.keyA=(st.keyA^HA[slot][count])>>>0; st.keyB=(st.keyB^HB[slot][count])>>>0; }
+  function keyFor(st,p){return p==='blue'?[(st.keyA^TURN_A)>>>0,(st.keyB^TURN_B)>>>0]:[st.keyA>>>0,st.keyB>>>0];}
+  function xorPiece(st,code,sq){st.keyA=(st.keyA^ZA[code][sq])>>>0;st.keyB=(st.keyB^ZB[code][sq])>>>0;}
+  function xorHand(st,slot,count){st.keyA=(st.keyA^HA[slot][count])>>>0;st.keyB=(st.keyB^HB[slot][count])>>>0;}
+  function setQuiet(st,q){q=Math.max(0,Math.min(100,q|0));st.keyA=(st.keyA^ZQ_A[st.quiet]^ZQ_A[q])>>>0;st.keyB=(st.keyB^ZQ_B[st.quiet]^ZQ_B[q])>>>0;st.quiet=q;}
 
   function makeMove(st,p,a){
-    const b=st.b,h=st.h,u={type:a.type,fr:a.fr,fc:a.fc,tr:a.tr,tc:a.tc,t:a.t,captured:0};
-    const base=p==='blue'?0:3;
+    const b=st.b,h=st.h,base=p==='blue'?0:3,u={type:a.type,fr:a.fr,fc:a.fc,tr:a.tr,tc:a.tc,t:a.t,captured:0,oldQuiet:st.quiet};
     if(a.type==='move'){
-      const si=idx(a.fr,a.fc),ti=idx(a.tr,a.tc),src=b[si],capt=b[ti]; u.captured=capt;
+      const si=idx(a.fr,a.fc),ti=idx(a.tr,a.tc),src=b[si],capt=b[ti];u.captured=capt;
       xorPiece(st,src,si);
-      if(capt){ xorPiece(st,capt,ti); const ct=tOf(capt),old=h[base+ct]; xorHand(st,base+ct,old); h[base+ct]=old+1; xorHand(st,base+ct,old+1); }
-      b[si]=0;b[ti]=src;xorPiece(st,src,ti);
-    } else {
-      const ti=idx(a.tr,a.tc),code=codeOf(p,a.t),slot=base+a.t,old=h[slot];
-      xorHand(st,slot,old);h[slot]=old-1;xorHand(st,slot,old-1);b[ti]=code;xorPiece(st,code,ti);
+      if(capt){xorPiece(st,capt,ti);const ct=tOf(capt),old=h[base+ct];xorHand(st,base+ct,old);h[base+ct]=old+1;xorHand(st,base+ct,old+1);}
+      b[si]=0;b[ti]=src;xorPiece(st,src,ti);setQuiet(st,capt?0:st.quiet+1);
+    }else{
+      const ti=idx(a.tr,a.tc),code=codeOf(p,a.t),slot=base+a.t,old=h[slot];xorHand(st,slot,old);h[slot]=old-1;xorHand(st,slot,old-1);b[ti]=code;xorPiece(st,code,ti);setQuiet(st,0);
     }
     return u;
   }
   function unmakeMove(st,p,u){
-    const b=st.b,h=st.h,base=p==='blue'?0:3;
+    const b=st.b,h=st.h,base=p==='blue'?0:3;setQuiet(st,u.oldQuiet);
     if(u.type==='move'){
-      const si=idx(u.fr,u.fc),ti=idx(u.tr,u.tc),src=b[ti],capt=u.captured;
-      xorPiece(st,src,ti);b[ti]=capt;
-      if(capt){ const ct=tOf(capt),slot=base+ct,old=h[slot];xorHand(st,slot,old);h[slot]=old-1;xorHand(st,slot,old-1);xorPiece(st,capt,ti); }
+      const si=idx(u.fr,u.fc),ti=idx(u.tr,u.tc),src=b[ti],capt=u.captured;xorPiece(st,src,ti);b[ti]=capt;
+      if(capt){const ct=tOf(capt),slot=base+ct,old=h[slot];xorHand(st,slot,old);h[slot]=old-1;xorHand(st,slot,old-1);xorPiece(st,capt,ti);}
       b[si]=src;xorPiece(st,src,si);
-    } else {
+    }else{
       const ti=idx(u.tr,u.tc),code=b[ti],slot=base+u.t;xorPiece(st,code,ti);b[ti]=0;const old=h[slot];xorHand(st,slot,old);h[slot]=old+1;xorHand(st,slot,old+1);
     }
   }
 
   function movesFrom(r,c,st,p,out){
-    const b=st.b,src=b[idx(r,c)]; if(!src||pOf(src)!==p)return;
-    const t=tOf(src);
+    const b=st.b,src=b[idx(r,c)];if(!src||pOf(src)!==p)return;const t=tOf(src);
     for(let i=0;i<8;i++){
-      const dr=DIRS[i][0],dc=DIRS[i][1],nr=r+dr,nc=c+dc; if(!inside(nr,nc))continue;
-      const ni=idx(nr,nc),q=b[ni];
-      if(q===EMPTY) out.push({type:'move',fr:r,fc:c,tr:nr,tc:nc});
-      else if(pOf(q)!==p&&canEatType(t,tOf(q))) out.push({type:'move',fr:r,fc:c,tr:nr,tc:nc});
-      else if(pOf(q)===p){
-        const jr=r+2*dr,jc=c+2*dc; if(!inside(jr,jc))continue;
-        const jq=b[idx(jr,jc)];
-        if(jq===EMPTY||(pOf(jq)!==p&&canEatType(t,tOf(jq)))) out.push({type:'move',fr:r,fc:c,tr:jr,tc:jc});
-      }
+      const dr=DIRS[i][0],dc=DIRS[i][1],nr=r+dr,nc=c+dc;if(!inside(nr,nc))continue;const ni=idx(nr,nc),q=b[ni];
+      if(q===0)out.push({type:'move',fr:r,fc:c,tr:nr,tc:nc});
+      else if(pOf(q)!==p&&canEatType(t,tOf(q)))out.push({type:'move',fr:r,fc:c,tr:nr,tc:nc});
+      else if(pOf(q)===p){const jr=r+2*dr,jc=c+2*dc;if(!inside(jr,jc))continue;const jq=b[idx(jr,jc)];if(jq===0||(pOf(jq)!==p&&canEatType(t,tOf(jq))))out.push({type:'move',fr:r,fc:c,tr:jr,tc:jc});}
     }
   }
-  function dropPositions(st,p,out){
-    out.length=0; const rows=p==='blue'?[5,6,7,8]:[0,1,2,3];
-    for(let i=0;i<4;i++){const r=rows[i];for(let c=0;c<9;c++)if(st.b[idx(r,c)]===0)out.push({r,c});}
-  }
+  function dropPositions(st,p,out){out.length=0;const rows=p==='blue'?[5,6,7,8]:[0,1,2,3];for(let i=0;i<4;i++){const r=rows[i];for(let c=0;c<9;c++)if(st.b[idx(r,c)]===0)out.push({r,c});}}
   function generateAll(st,p,out){
-    out.length=0;
-    for(let r=0;r<9;r++)for(let c=0;c<9;c++)if(pOf(st.b[idx(r,c)])===p)movesFrom(r,c,st,p,out);
-    if(st.h[(p==='blue'?0:3)]+st.h[(p==='blue'?1:4)]+st.h[(p==='blue'?2:5)]>0){
-      const drops=[];dropPositions(st,p,drops);const base=p==='blue'?0:3;
-      for(let t=0;t<3;t++)if(st.h[base+t]>0)for(let i=0;i<drops.length;i++)out.push({type:'drop',t,tr:drops[i].r,tc:drops[i].c});
-    }
+    out.length=0;for(let r=0;r<9;r++)for(let c=0;c<9;c++)if(pOf(st.b[idx(r,c)])===p)movesFrom(r,c,st,p,out);
+    const base=p==='blue'?0:3;if(st.h[base]+st.h[base+1]+st.h[base+2]){const drops=[];dropPositions(st,p,drops);for(let t=0;t<3;t++)if(st.h[base+t])for(let i=0;i<drops.length;i++)out.push({type:'drop',t,tr:drops[i].r,tc:drops[i].c});}
     return out;
   }
-  function winningMoves(st,p,out){
-    out=out||[];out.length=0;const g=goal(p),tmp=[];
-    for(let r=0;r<9;r++)for(let c=0;c<9;c++)if(pOf(st.b[idx(r,c)])===p){
-      tmp.length=0;movesFrom(r,c,st,p,tmp);for(let i=0;i<tmp.length;i++)if(tmp[i].tr===g)out.push(tmp[i]);
-    }
-    return out;
-  }
+  function winningMoves(st,p,out){out=out||[];out.length=0;const g=goal(p),tmp=[];for(let r=0;r<9;r++)for(let c=0;c<9;c++)if(pOf(st.b[idx(r,c)])===p){tmp.length=0;movesFrom(r,c,st,p,tmp);for(let i=0;i<tmp.length;i++)if(tmp[i].tr===g)out.push(tmp[i]);}return out;}
+
   function threatCount(st,p,cap){
-    const b=st.b, g=goal(p), dir=p==='blue'?-1:1, srcRows=p==='blue'?[1,2]:[7,6];
-    let n=0; const limit=cap||3;
-    // A breakthrough can only land on the goal row, so inspect the two source rows.
+    const b=st.b,g=goal(p),dir=p==='blue'?-1:1,srcRows=p==='blue'?[1,2]:[7,6];let n=0,limit=cap||4;
     for(let pass=0;pass<2;pass++){
-      const r=srcRows[pass];
-      for(let c=0;c<9;c++){
-        const src=b[idx(r,c)]; if(!src||pOf(src)!==p) continue;
-        const t=tOf(src);
-        const step=pass===0;
-        if(step){
-          for(let dc=-1;dc<=1;dc++){
-            const tc=c+dc; if(tc<0||tc>8) continue;
-            const q=b[idx(g,tc)];
-            if(q===0 || (pOf(q)!==p && canEatType(t,tOf(q)))){ n++; if(n>=limit)return n; }
-          }
-        }else{
-          // A two-square friendly jump into the goal row requires a friendly piece in-between.
-          const midR=r+dir*0, targetR=g;
-          for(let dc=-1;dc<=1;dc++){
-            const midC=c+dc; if(midC<0||midC>8) continue;
-            const mid=b[idx(r+dir,midC)]; if(!mid||pOf(mid)!==p) continue;
-            const tc=c+2*dc; if(tc<0||tc>8) continue;
-            const q=b[idx(targetR,tc)];
-            if(q===0 || (pOf(q)!==p && canEatType(t,tOf(q)))){ n++; if(n>=limit)return n; }
-          }
-        }
+      const r=srcRows[pass];for(let c=0;c<9;c++){
+        const src=b[idx(r,c)];if(!src||pOf(src)!==p)continue;const t=tOf(src);
+        if(pass===0){for(let dc=-1;dc<=1;dc++){const tc=c+dc;if(tc<0||tc>8)continue;const q=b[idx(g,tc)];if(q===0||(pOf(q)!==p&&canEatType(t,tOf(q)))){if(++n>=limit)return n;}}}
+        else {for(let dc=-1;dc<=1;dc++){const midC=c+dc;if(midC<0||midC>8)continue;const mid=b[idx(r+dir,midC)];if(!mid||pOf(mid)!==p)continue;const tc=c+2*dc;if(tc<0||tc>8)continue;const q=b[idx(g,tc)];if(q===0||(pOf(q)!==p&&canEatType(t,tOf(q)))){if(++n>=limit)return n;}}}
       }
     }
     return n;
   }
+
   function legalActs(st,p,out,enemyWins){
     generateAll(st,p,out);
     if(enemyWins>0){
-      const filtered=[];
-      for(let i=0;i<out.length;i++){
-        const a=out[i],u=makeMove(st,p,a);const remaining=threatCount(st,opp(p),1);unmakeMove(st,p,u);
-        if(remaining===0)filtered.push(a);
-      }
-      out.length=0;for(let i=0;i<filtered.length;i++)out.push(filtered[i]);
+      const filtered=[];for(let i=0;i<out.length;i++){const a=out[i],u=makeMove(st,p,a),remaining=threatCount(st,opp(p),1);unmakeMove(st,p,u);if(remaining===0)filtered.push(a);}out.length=0;for(let i=0;i<filtered.length;i++)out.push(filtered[i]);
     }
     return out;
   }
 
   // ---------- tactical helpers ----------
-  function pieceAttackCount(st,r,c,p,t){
-    let n=0;for(let i=0;i<8;i++){const nr=r+DIRS[i][0],nc=c+DIRS[i][1];if(!inside(nr,nc))continue;const q=st.b[idx(nr,nc)];if(q&&pOf(q)!==p&&canEatType(t,tOf(q)))n++;}return n;
-  }
-  function pieceDefenseCount(st,r,c,p,t){
-    let n=0;for(let i=0;i<8;i++){const nr=r+DIRS[i][0],nc=c+DIRS[i][1];if(!inside(nr,nc))continue;const q=st.b[idx(nr,nc)];if(q&&pOf(q)===p&&canEatType(tOf(q),t))n++;}return n;
-  }
+  function isCapture(st,a){return a.type==='move'&&st.b[idx(a.tr,a.tc)]!==0;}
+  function isRecapture(a,lastMove){return !!(a&&lastMove&&a.type==='move'&&lastMove.type==='move'&&a.tr===lastMove.tr&&a.tc===lastMove.tc);}
+  function pieceAttackCount(st,r,c,p,t){let n=0;for(let i=0;i<8;i++){const nr=r+DIRS[i][0],nc=c+DIRS[i][1];if(inside(nr,nc)){const q=st.b[idx(nr,nc)];if(q&&pOf(q)!==p&&canEatType(t,tOf(q)))n++;}}return n;}
+  function pieceDefenseCount(st,r,c,p,t){let n=0;for(let i=0;i<8;i++){const nr=r+DIRS[i][0],nc=c+DIRS[i][1];if(inside(nr,nc)){const q=st.b[idx(nr,nc)];if(q&&pOf(q)===p&&canEatType(tOf(q),t))n++;}}return n;}
   function immediateDropThreats(st,p,t){
     const rows=p==='blue'?[5,6,7,8]:[0,1,2,3];let best=0;
-    for(let i=0;i<4;i++)for(let c=0;c<9;c++){const r=rows[i];if(st.b[idx(r,c)]!==0)continue;let score=0;
-      for(let d=0;d<8;d++){const nr=r+DIRS[d][0],nc=c+DIRS[d][1];if(!inside(nr,nc))continue;const q=st.b[idx(nr,nc)];if(q&&pOf(q)!==p&&canEatType(t,tOf(q)))score+=2;}
-      if(forwardDist(r,p)<=1)score+=5; else if(forwardDist(r,p)<=2)score+=2; if(Math.abs(c-4)<=1)score+=1;
-      if(score>best)best=score;
-    }
+    for(let i=0;i<4;i++)for(let c=0;c<9;c++){const r=rows[i];if(st.b[idx(r,c)]!==0)continue;let s=0;for(let d=0;d<8;d++){const nr=r+DIRS[d][0],nc=c+DIRS[d][1];if(!inside(nr,nc))continue;const q=st.b[idx(nr,nc)];if(q&&pOf(q)!==p&&canEatType(t,tOf(q)))s+=2;else if(q&&pOf(q)===p)s++;}if(forwardDist(r,p)<=1)s+=8;else if(forwardDist(r,p)<=2)s+=3;if(Math.abs(c-4)<=1)s+=2;if(s>best)best=s;}
     return best;
+  }
+  function moveIsForcing(st,p,a,enemyWins){
+    if(enemyWins>0)return true;if(a.tr===goal(p))return true;if(isCapture(st,a))return true;if(a.type==='move'&&forwardDist(a.tr,p)<=2)return true;if(a.type==='drop'&&(forwardDist(a.tr,p)<=1||immediateDropThreats(st,p,a.t)>=6))return true;return false;
   }
 
   // ---------- evaluation ----------
+  const PST=[[0,2,4,6,8,6,4,2,0],[3,6,9,12,14,12,9,6,3],[4,8,12,16,18,16,12,8,4],[5,10,14,18,22,18,14,10,5],[4,9,13,17,20,17,13,9,4],[3,7,11,15,18,15,11,7,3],[2,5,9,13,16,13,9,5,2],[1,3,6,9,12,9,6,3,1],[0,1,2,3,5,3,2,1,0]];
   function evaluate(st,p){
     const enemy=opp(p);let score=0;
-    let ownMob=0,enemyMob=0,ownAtk=0,enemyAtk=0,ownSup=0,enemySup=0;
-    let ownPieces=0,enemyPieces=0,ownIsolated=0,enemyIsolated=0;
-    let ownFront=99,enemyFront=99,ownAdvanced=0,enemyAdvanced=0;
-    let ownDanger=0,enemyDanger=0,ownCenter=0,enemyCenter=0;
-    let ownRace=0,enemyRace=0;
-
+    let ownMob=0,enemyMob=0,ownAtk=0,enemyAtk=0,ownDef=0,enemyDef=0;
+    let ownPieces=0,enemyPieces=0,ownIsol=0,enemyIsol=0,ownAdvanced=0,enemyAdvanced=0;
+    let ownCenter=0,enemyCenter=0,ownRace=0,enemyRace=0,ownDrop=0,enemyDrop=0;
+    const ownFront=99,enemyFront=99;
     for(let r=0;r<9;r++)for(let c=0;c<9;c++){
-      const code=st.b[idx(r,c)];if(!code)continue;const q=pOf(code),t=tOf(code),own=q===p,fd=forwardDist(r,q);
-      const prog=8-fd;let val=230+prog*112+(4-Math.abs(c-4))*24;
-      // Exponential race pressure near the goal.
-      if(fd===0)val+=MATE/2; else if(fd===1)val+=12500; else if(fd===2)val+=3600; else if(fd===3)val+=850; else if(fd===4)val+=230;
-      let mobility=0,attacks=0,support=0,vulnerable=0,jump=0,defense=0;
+      const code=st.b[idx(r,c)];if(!code)continue;const q=pOf(code),t=tOf(code),own=q===p,fd=forwardDist(r,q),progress=8-fd;
+      let val=320+progress*120+PST[q==='blue'?r:8-r][c]*16;
+      if(fd===0)val+=MATE/2; else if(fd===1)val+=18000; else if(fd===2)val+=5200; else if(fd===3)val+=1400; else if(fd===4)val+=420;
+      let mobility=0,attacks=0,defense=0,blocked=0,jumps=0,enemyDanger=0,friendSupport=0;
       for(let i=0;i<8;i++){
         const nr=r+DIRS[i][0],nc=c+DIRS[i][1];if(!inside(nr,nc))continue;const qcode=st.b[idx(nr,nc)];
         if(!qcode)mobility++;
-        else if(pOf(qcode)===q){
-          support++;
-          if(canEatType(tOf(qcode),t)) defense++;
-          const jr=r+2*DIRS[i][0],jc=c+2*DIRS[i][1];
-          if(inside(jr,jc)){const jq=st.b[idx(jr,jc)];if(!jq||(pOf(jq)!==q&&canEatType(t,tOf(jq)))){mobility++;jump++;}}
-        } else {
-          if(canEatType(t,tOf(qcode))){mobility++;attacks++;}
-          else vulnerable++;
-        }
+        else if(pOf(qcode)===q){friendSupport++;if(canEatType(tOf(qcode),t))defense++;const jr=r+2*DIRS[i][0],jc=c+2*DIRS[i][1];if(inside(jr,jc)){const jq=st.b[idx(jr,jc)];if(!jq||(pOf(jq)!==q&&canEatType(t,tOf(jq)))){mobility++;jumps++;}}}
+        else {if(canEatType(t,tOf(qcode))){mobility++;attacks++;}else{enemyDanger++;blocked++;}}
       }
-      for(let i=0;i<8;i++){
-        const nr=r+DIRS[i][0],nc=c+DIRS[i][1];
-        if(!inside(nr,nc))continue;
-        const qcode=st.b[idx(nr,nc)];
-        if(qcode&&pOf(qcode)===q&&canEatType(tOf(qcode),t))defense++;
-      }
-      val += mobility*20 + attacks*130 + jump*52 + support*48 + defense*34 - vulnerable*40;
-      if(fd<=3)val += attacks*170 - vulnerable*125 + defense*40;
-      if(fd<=1)val += mobility*44;
-      if(support===0&&fd<=4){val-=34;if(mobility<=1)val-=48;}
-      if(c===4)val+=35;
+      const isolated=friendSupport===0;const unsafe=enemyDanger>0&&defense===0;
+      val+=mobility*22+jumps*72+attacks*155+defense*58+friendSupport*46-enemyDanger*55;
+      if(unsafe)val-=fd<=3?420:170;
+      if(fd<=3)val+=attacks*190+defense*70-enemyDanger*135;
+      if(fd<=1)val+=mobility*65;
+      if(isolated&&fd<=4)val-=90;
+      if(fd<=2&&friendSupport>=2)val+=130;
+      if(c===4)val+=36;
       if(q===p){
-        ownPieces++; ownMob+=mobility;ownAtk+=attacks;ownSup+=support;ownDanger+=vulnerable;ownCenter+=(4-Math.abs(c-4));
-        ownFront=Math.min(ownFront,fd);if(fd<=2)ownAdvanced++;if(support===0)ownIsolated++;ownRace+=Math.max(0,16-fd*2)+attacks*2;
+        ownPieces++;ownMob+=mobility;ownAtk+=attacks;ownDef+=defense;ownCenter+=4-Math.abs(c-4);if(isolated)ownIsol++;if(fd<=2)ownAdvanced++;ownRace+=Math.max(0,18-fd*3)+attacks*3;
         score+=val;
       }else{
-        enemyPieces++;enemyMob+=mobility;enemyAtk+=attacks;enemySup+=support;enemyDanger+=vulnerable;enemyCenter+=(4-Math.abs(c-4));
-        enemyFront=Math.min(enemyFront,fd);if(fd<=2)enemyAdvanced++;if(support===0)enemyIsolated++;enemyRace+=Math.max(0,16-fd*2)+attacks*2;
+        enemyPieces++;enemyMob+=mobility;enemyAtk+=attacks;enemyDef+=defense;enemyCenter+=4-Math.abs(c-4);if(isolated)enemyIsol++;if(fd<=2)enemyAdvanced++;enemyRace+=Math.max(0,18-fd*3)+attacks*3;
         score-=val;
       }
     }
-
     const base=p==='blue'?0:3,eb=enemy==='blue'?0:3;let pHand=0,eHand=0;
-    for(let t=0;t<3;t++){const ph=st.h[base+t],eh=st.h[eb+t];pHand+=ph;eHand+=eh;score+=(ph-eh)*(260+t*26);}
-    score+=(pHand-eHand)*135;
+    for(let t=0;t<3;t++){const ph=st.h[base+t],eh=st.h[eb+t];pHand+=ph;eHand+=eh;score+=(ph-eh)*(300+t*30);}
+    score+=(pHand-eHand)*160;
 
-    // Reserve-to-board tempo and drop quality.
-    let ownDrop=0,enemyDrop=0;const orows=p==='blue'?[5,6,7,8]:[0,1,2,3],erows=enemy==='blue'?[5,6,7,8]:[0,1,2,3];
+    const orows=p==='blue'?[5,6,7,8]:[0,1,2,3],erows=enemy==='blue'?[5,6,7,8]:[0,1,2,3];
     for(let i=0;i<4;i++)for(let c=0;c<9;c++){if(st.b[idx(orows[i],c)]===0)ownDrop++;if(st.b[idx(erows[i],c)]===0)enemyDrop++;}
-    score+=(ownDrop-enemyDrop)*12 + (pHand-eHand)*22;
+    score+=(ownDrop-enemyDrop)*14;
+    score+=(ownMob-enemyMob)*19+(ownAtk-enemyAtk)*42+(ownDef-enemyDef)*27;
+    score+=(enemyIsol-ownIsol)*35+(enemyAdvanced-ownAdvanced)*-10+(ownCenter-enemyCenter)*12;
+    if(ownPieces)score+=(9-findFront(st,p))*175;if(enemyPieces)score-=(9-findFront(st,enemy))*175;
+    score+=(ownRace-enemyRace)*12;
+    const ownW=threatCount(st,p,4),enemyW=threatCount(st,enemy,4);
+    if(ownW)score+=760000+Math.min(ownW,4)*36000;if(enemyW)score-=920000+Math.min(enemyW,4)*42000;
+    if(ownW>=2)score+=62000;if(enemyW>=2)score-=76000;
+    if(st.quiet>=85)score+=(st.quiet-50)*(enemyMob-ownMob)*2;
 
-    // Macro race, central control, defensive integrity.
-    score+=(ownPieces?((9-ownFront)*155):0) - (enemyPieces?((9-enemyFront)*155):0);
-    score+=(ownAdvanced-enemyAdvanced)*310;
-    score+=(ownMob-enemyMob)*18 + (ownAtk-enemyAtk)*35 + (ownSup-enemySup)*23;
-    score+=(enemyIsolated-ownIsolated)*26 + (enemyDanger-ownDanger)*20 + (ownCenter-enemyCenter)*10;
-    score+=(ownRace-enemyRace)*10;
+    // Active-force correction: captured pieces are reusable reserves, but an army that is
+    // actually deployed on the board has more immediate influence than the same material
+    // sitting in hand. Keep this strong enough that the engine does not casually trade away
+    // board presence for vague positional compensation.
+    const ownBoard=ownPieces, enemyBoard=enemyPieces;
+    const ownReserve=pHand, enemyReserve=eHand;
+    score += (ownBoard-enemyBoard)*185;
+    score += (ownBoard*ownBoard-enemyBoard*enemyBoard)*18;
+    score += (enemyReserve-ownReserve)*42;
 
-    const ownW=threatCount(st,p,RACE_CAP),enemyW=threatCount(st,enemy,RACE_CAP);
-    if(ownW)score+=760000+Math.min(ownW,3)*28000;
-    if(enemyW)score-=900000+Math.min(enemyW,3)*32000;
-    if(ownW>=2)score+=30000;if(enemyW>=2)score-=38000;
-
+    // Type balance: avoid creating a reserve that is tactically awkward when the opponent
+    // controls the corresponding counter-type on the board.
+    for(let t=0;t<3;t++){
+      const ph=st.h[base+t], eh=st.h[eb+t];
+      score += (ph-eh)*(90 + t*8);
+    }
     return Math.round(score);
   }
+  function findFront(st,p){let f=99;for(let r=0;r<9;r++)for(let c=0;c<9;c++){const q=st.b[idx(r,c)];if(q&&pOf(q)===p)f=Math.min(f,forwardDist(r,p));}return f===99?9:f;}
 
   // ---------- search state ----------
   let searchStart=0,nodes=0,stop=false,rootRep=1,rootKeyA=0,rootKeyB=0,gameSeed=0,rootMoveCount=0;
-  const killers=Array.from({length:MAX_PLY},()=>[null,null]);
-  const moveHistory=new Int32Array(6561);
-  const dropHistory=new Int32Array(243);
-  const pathA=new Uint32Array(MAX_PLY),pathB=new Uint32Array(MAX_PLY);
+  let ttEnabled=true;
+  const killers=Array.from({length:MAX_PLY},()=>[null,null,null]);
+  const moveHistory=new Int32Array(6561),dropHistory=new Int32Array(243);
+  const pathA=new Uint32Array(MAX_PLY),pathB=new Uint32Array(MAX_PLY),pathPly=new Int16Array(MAX_PLY);
+  const PVRoot=[];
 
-  function isCapture(st,a){return a.type==='move'&&st.b[idx(a.tr,a.tc)]!==0;}
-  function materialCount(st){ let n=0; for(let i=0;i<81;i++) if(st.b[i]) n++; for(let i=0;i<6;i++) n+=st.h[i]; return n; }
-  function isRecapture(a,lastMove){ return !!(a&&lastMove&&a.type==='move'&&lastMove.type==='move'&&a.tr===lastMove.tr&&a.tc===lastMove.tc); }
-  function noteCutoff(a,depth){
-    const k=moveKey(a),add=Math.min(22000,depth*depth*24);
-    if(a.type==='move')moveHistory[k]=Math.min(400000,moveHistory[k]+add); else dropHistory[a.t*81+a.tr*9+a.tc]=Math.min(300000,dropHistory[a.t*81+a.tr*9+a.tc]+add);
-    if(depth>=1){if(!sameMove(killers[depth][0],a)){killers[depth][1]=killers[depth][0];killers[depth][0]=a;}}
-  }
-  function openingNoise(a,ply){
-    if(ply>10)return 0;
-    const k=mix32((moveKey(a)^gameSeed^((ply+1)*0x9e3779b9))>>>0);
-    // Only enough randomness to diversify equal-ish openings; never used to override a forcing win.
-    return (k%1000)/1000 * 18;
-  }
-  function scoreMove(st,p,a,depth,ttMove,enemyWins,ply){
-    if(sameMove(a,ttMove))return 80000000;
-    if(a.tr===goal(p))return 76000000;
-    let s=0;const capt=isCapture(st,a);
-    if(capt){
-      const target=st.b[idx(a.tr,a.tc)],victim=tOf(target),attacker=tOf(st.b[idx(a.fr,a.fc)]);
-      const victimV=[700,760,730][victim],attackerV=[700,760,730][attacker];
-      s+=1800000+victimV*900-attackerV*260;
-      s+=pieceAttackCount(st,a.tr,a.tc,p,attacker)*18000;
-    }
-    if(enemyWins>0)s+=30000000;
-    if(a.type==='drop'){
-      const fd=forwardDist(a.tr,p),k=a.t*81+a.tr*9+a.tc;
-      s+=170000+(8-fd)*160+(4-Math.abs(a.tc-4))*260;
-      s+=dropHistory[k]||0;
-      const code=codeOf(p,a.t);let adjE=0,adjF=0,threat=0;
-      for(let i=0;i<8;i++){const nr=a.tr+DIRS[i][0],nc=a.tc+DIRS[i][1];if(!inside(nr,nc))continue;const q=st.b[idx(nr,nc)];if(!q)continue;if(pOf(q)===p)adjF++;else if(canEatType(a.t,tOf(q))){adjE++;threat+=2;}else threat--;}
-      s+=adjE*8000+adjF*2600+threat*3400;
-      if(fd<=1)s+=16000;
-    }else{
-      const fd=forwardDist(a.tr,p);const src=st.b[idx(a.fr,a.fc)],t=tOf(src);
-      s+=(8-fd)*1500;
-      s+=pieceAttackCount(st,a.tr,a.tc,p,t)*2600 + pieceDefenseCount(st,a.tr,a.tc,p,t)*900;
-      // Prefer squares that improve both the race and local tactical safety.
-      const enemy=p==='blue'?'red':'blue';
-      let enemyCaptures=0, enemyGoalPressure=0;
-      for(let d=0;d<8;d++){
-        const nr=a.tr+DIRS[d][0],nc=a.tc+DIRS[d][1]; if(!inside(nr,nc))continue;
-        const q=st.b[idx(nr,nc)]; if(q&&pOf(q)===enemy&&canEatType(tOf(q),t)) enemyCaptures++;
-      }
-      if(enemyCaptures===0) s+=4200;
-      else s-=enemyCaptures*5200;
-      if(fd<=2) s+=2600;
-      s+=moveHistory[moveKey(a)]||0;
-      if(a.tr===goal(p))s+=10000000;
-      if(Math.abs(a.tr-a.fr)===2)s+=900;
-    }
-    if(depth<MAX_PLY&&sameMove(killers[depth][0],a))s+=1400000;
-    else if(depth<MAX_PLY&&sameMove(killers[depth][1],a))s+=700000;
-    return s;
-  }
-  function orderMoves(st,p,acts,depth,ttMove,enemyWins,ply){
-    for(let i=0;i<acts.length;i++)acts[i]._score=scoreMove(st,p,acts[i],depth,ttMove,enemyWins,ply);
-    acts.sort((a,b)=>b._score-a._score);for(let i=0;i<acts.length;i++)delete acts[i]._score;return acts;
-  }
+  function isTerminalScore(v){return Math.abs(v)>=MATE-10000;}
+  function noteCutoff(a,depth){const k=moveKey(a),add=Math.min(50000,depth*depth*36);if(a.type==='move')moveHistory[k]=Math.min(1000000,moveHistory[k]+add);else dropHistory[a.t*81+a.tr*9+a.tc]=Math.min(700000,dropHistory[a.t*81+a.tr*9+a.tc]+add);if(depth>=1&&!sameMove(killers[depth][0],a)){killers[depth][2]=killers[depth][1];killers[depth][1]=killers[depth][0];killers[depth][0]=a;}}
   function repetitionDraw(keyA,keyB,ply){
     let count=0;for(let i=0;i<=ply;i++)if(pathA[i]===keyA&&pathB[i]===keyB)count++;
     if(keyA===rootKeyA&&keyB===rootKeyB)count+=Math.max(0,rootRep-1);return count>=3;
   }
-  function tacticalMove(st,p,a,enemyWins){
-    if(a.tr===goal(p)||enemyWins>0)return true;
-    if(a.type==='move'&&st.b[idx(a.tr,a.tc)]!==0)return true;
-    if(a.type==='move'&&forwardDist(a.tr,p)<=2)return true;
-    if(a.type==='drop'&&forwardDist(a.tr,p)<=1)return true;
-    return false;
+  function scoreMove(st,p,a,depth,ttMove,enemyWins,ply){
+    if(sameMove(a,ttMove))return 1000000000;
+    if(a.tr===goal(p))return 950000000;
+    let s=0;const cap=isCapture(st,a);
+    if(enemyWins>0)s+=60000000;
+    if(moveIsForcing(st,p,a,enemyWins))s+=4200000;
+    if(cap){
+      const target=st.b[idx(a.tr,a.tc)],victim=tOf(target),att=tOf(st.b[idx(a.fr,a.fc)]),victimV=[760,820,790][victim],attV=[760,820,790][att];
+      s+=5200000+victimV*820-attV*310;s+=pieceAttackCount(st,a.tr,a.tc,p,att)*25000;s+=pieceDefenseCount(st,a.tr,a.tc,p,att)*8000;
+      const danger=pieceAttackCount(st,a.tr,a.tc,opp(p),victim);s-=danger*36000;
+    }
+    if(a.type==='drop'){
+      const fd=forwardDist(a.tr,p),k=a.t*81+a.tr*9+a.tc;s+=340000+(8-fd)*900+(4-Math.abs(a.tc-4))*500;s+=dropHistory[k]||0;
+      const code=codeOf(p,a.t);let adjFriend=0,adjEnemy=0,local=0;
+      for(let d=0;d<8;d++){const nr=a.tr+DIRS[d][0],nc=a.tc+DIRS[d][1];if(!inside(nr,nc))continue;const q=st.b[idx(nr,nc)];if(!q){local++;continue;}if(pOf(q)===p)adjFriend++;else if(canEatType(a.t,tOf(q)))adjEnemy++;else local--;}
+      s+=adjEnemy*15000+adjFriend*6500+local*1800;if(fd<=1)s+=38000;if(fd<=2)s+=14000;s+=immediateDropThreats(st,p,a.t)*4200;
+    }else{
+      const fd=forwardDist(a.tr,p),src=st.b[idx(a.fr,a.fc)],t=tOf(src),mk=moveKey(a);s+=(8-fd)*2800;s+=pieceAttackCount(st,a.tr,a.tc,p,t)*7200+pieceDefenseCount(st,a.tr,a.tc,p,t)*2500;s+=moveHistory[mk]||0;if(fd<=2)s+=9000;if(Math.abs(a.tr-a.fr)===2)s+=2200;
+      const enemy=p==='blue'?'red':'blue';let captureThreat=0;for(let d=0;d<8;d++){const nr=a.tr+DIRS[d][0],nc=a.tc+DIRS[d][1];if(inside(nr,nc)){const q=st.b[idx(nr,nc)];if(q&&pOf(q)===enemy&&canEatType(tOf(q),t))captureThreat++;}}s-=captureThreat*30000;
+      if(a.type==='move'&&a.tr===goal(p))s+=950000000;
+    }
+    for(let k=0;k<3;k++)if(depth<MAX_PLY&&sameMove(killers[depth][k],a)){s+=(k===0?3200000:(k===1?1800000:900000));break;}
+    return s;
   }
-
-  function moveIsForcing(st,p,a,enemyWins){
-    if(enemyWins>0) return true;
-    if(a.tr===goal(p)) return true;
-    if(isCapture(st,a)) return true;
-    if(a.type==='move' && forwardDist(a.tr,p)<=2) return true;
-    if(a.type==='drop' && (forwardDist(a.tr,p)<=1 || immediateDropThreats(st,p,a.t)>=5)) return true;
-    return false;
+  function orderMoves(st,p,acts,depth,ttMove,enemyWins,ply){for(let i=0;i<acts.length;i++)acts[i]._score=scoreMove(st,p,acts[i],depth,ttMove,enemyWins,ply);acts.sort((a,b)=>b._score-a._score);for(let i=0;i<acts.length;i++)delete acts[i]._score;return acts;}
+  function candidateLimit(depth,count,lowMaterial){
+    if(lowMaterial)return count;
+    if(depth<=2)return count;
+    if(depth===3)return Math.min(96,count);
+    if(depth===4)return Math.min(64,count);
+    if(depth===5)return Math.min(48,count);
+    if(depth===6)return Math.min(40,count);
+    if(depth<=8)return Math.min(34,count);
+    return Math.min(30,count);
   }
   function trimSearchMoves(st,p,acts,depth,enemyWins){
-    if(materialCount(st)<=7) return acts;
-    if(acts.length<=24 || depth<3) return acts;
-    const limit = depth>=8 ? 16 : (depth>=6 ? 18 : (depth>=4 ? 20 : 22));
-    const kept=[];
-    for(let i=0;i<acts.length;i++){
-      const a=acts[i];
-      if(i<limit || moveIsForcing(st,p,a,enemyWins)) kept.push(a);
-    }
-    return kept.length ? kept : acts.slice(0,Math.min(limit,acts.length));
+    if(acts.length<=candidateLimit(depth,acts.length,materialCount(st)<=8))return acts;
+    const keep=candidateLimit(depth,acts.length,false),out=[];for(let i=0;i<acts.length;i++)if(i<keep||moveIsForcing(st,p,acts[i],enemyWins))out.push(acts[i]);
+    return out.length?out:acts.slice(0,keep);
   }
+  function materialCount(st){let n=0;for(let i=0;i<81;i++)if(st.b[i])n++;for(let i=0;i<6;i++)n+=st.h[i];return n;}
+  function tacticalMove(st,p,a,enemyWins){return enemyWins>0||a.tr===goal(p)||isCapture(st,a)||(a.type==='move'&&forwardDist(a.tr,p)<=2)||(a.type==='drop'&&forwardDist(a.tr,p)<=1);}
 
   function qsearch(st,p,alpha,beta,ply,qply){
     if((nodes&1023)===0&&Date.now()-searchStart>TIME_LIMIT){stop=true;throw new Error('TO');}
-    nodes++;const[keyA,keyB]=keyFor(st,p);if(repetitionDraw(keyA,keyB,ply))return DRAW;
-    const ownW=threatCount(st,p,1);if(ownW>0)return MATE-ply;
-    const enemy=opp(p),enemyW=threatCount(st,enemy,1);
-    if(enemyW>0){
-      const evasions=[];legalActs(st,p,evasions,enemyW);if(evasions.length===0)return -MATE+ply;
-      const tt=probeTT(keyA,keyB,ply);orderMoves(st,p,evasions,0,tt?tt.move:null,enemyW,ply);
-      for(let i=0;i<evasions.length;i++){const a=evasions[i],u=makeMove(st,p,a),v=-qsearch(st,enemy,-beta,-alpha,ply+1,qply+1);unmakeMove(st,p,u);if(v>=beta)return beta;if(v>alpha)alpha=v;}
-      return alpha;
-    }
-    const stand=evaluate(st,p);if(stand>=beta)return stand;if(stand>alpha)alpha=stand;if(qply>=6)return stand;
-    const acts=[],tactical=[];generateAll(st,p,acts);for(let i=0;i<acts.length;i++)if(tacticalMove(st,p,acts[i],0))tactical.push(acts[i]);
-    if(tactical.length===0)return stand;const tt=probeTT(keyA,keyB,ply);orderMoves(st,p,tactical,qply,tt?tt.move:null,0,ply);
-    for(let i=0;i<tactical.length;i++){const a=tactical[i],u=makeMove(st,p,a),v=-qsearch(st,enemy,-beta,-alpha,ply+1,qply+1);unmakeMove(st,p,u);if(v>=beta)return beta;if(v>alpha)alpha=v;}
+    nodes++;pathA[ply]=keyFor(st,p)[0];pathB[ply]=keyFor(st,p)[1];
+    const[keyA,keyB]=keyFor(st,p);if(repetitionDraw(keyA,keyB,ply))return DRAW;if(st.quiet>=100)return DRAW;
+    const ownW=threatCount(st,p,1);if(ownW>0)return MATE-ply;const enemy=opp(p),enemyW=threatCount(st,enemy,1);
+    if(enemyW>0){const evasions=[];legalActs(st,p,evasions,enemyW);if(evasions.length===0)return -MATE+ply;orderMoves(st,p,evasions,0,null,enemyW,ply);for(let i=0;i<evasions.length;i++){const a=evasions[i],u=makeMove(st,p,a),v=-qsearch(st,enemy,-beta,-alpha,ply+1,qply+1);unmakeMove(st,p,u);if(v>=beta)return beta;if(v>alpha)alpha=v;}return alpha;}
+    const stand=evaluate(st,p);if(stand>=beta)return stand;if(stand>alpha)alpha=stand;if(qply>=Q_MAX)return stand;
+    const acts=[],tactical=[];generateAll(st,p,acts);for(let i=0;i<acts.length;i++)if(tacticalMove(st,p,acts[i],0))tactical.push(acts[i]);if(!tactical.length)return stand;orderMoves(st,p,tactical,qply,null,0,ply);
+    const lim=Math.min(tactical.length,Math.max(10,26-qply*2));
+    for(let i=0;i<lim;i++){const a=tactical[i],u=makeMove(st,p,a),v=-qsearch(st,enemy,-beta,-alpha,ply+1,qply+1);unmakeMove(st,p,u);if(v>=beta)return beta;if(v>alpha)alpha=v;}
     return alpha;
   }
 
   function search(st,p,depth,alpha,beta,ply,lastMove,allowExtension){
     if((nodes&1023)===0&&Date.now()-searchStart>TIME_LIMIT){stop=true;throw new Error('TO');}
-    nodes++;const[keyA,keyB]=keyFor(st,p);pathA[ply]=keyA;pathB[ply]=keyB;if(repetitionDraw(keyA,keyB,ply))return DRAW;
+    nodes++;const kp=keyFor(st,p),keyA=kp[0],keyB=kp[1];pathA[ply]=keyA;pathB[ply]=keyB;if(repetitionDraw(keyA,keyB,ply))return DRAW;if(st.quiet>=100)return DRAW;
     const ownW=threatCount(st,p,1);if(ownW>0)return MATE-ply;
-    const enemy=opp(p),enemyW=threatCount(st,enemy,1);
-    const ttSafe = rootRep <= 1;
-    const tt=ttSafe ? probeTT(keyA,keyB,ply) : null;
-    let ttMove=null;
-    if(tt){ttMove=tt.move;if(tt.depth>=depth){if(tt.flag===1)return tt.val;if(tt.flag===2&&tt.val>=beta)return tt.val;if(tt.flag===3&&tt.val<=alpha)return tt.val;}}
+    const enemy=opp(p),enemyW=threatCount(st,enemy,1);const ttSafe=ttEnabled&&rootRep<=1&&st.quiet<92;const tt=ttSafe?probeTT(keyA,keyB,ply):null;
+    let ttMove=null;if(tt){ttMove=tt.move;if(tt.depth>=depth){if(tt.flag===1)return tt.val;if(tt.flag===2&&tt.val>=beta)return tt.val;if(tt.flag===3&&tt.val<=alpha)return tt.val;}}
     if(depth<=0)return qsearch(st,p,alpha,beta,ply,0);
-
-    const acts=[];legalActs(st,p,acts,enemyW);if(acts.length===0)return -MATE+ply;orderMoves(st,p,acts,depth,ttMove,enemyW,ply);
-    const searchActs=trimSearchMoves(st,p,acts,depth,enemyW);
+    const acts=[];legalActs(st,p,acts,enemyW);if(!acts.length)return -MATE+ply;orderMoves(st,p,acts,depth,ttMove,enemyW,ply);const searchActs=trimSearchMoves(st,p,acts,depth,enemyW);
     const origAlpha=alpha;let best=-Infinity,bestMove=null;
 
-    for(let i=0;i<searchActs.length;i++){
-      const a=searchActs[i],capture=isCapture(st,a),recapture=isRecapture(a,lastMove),u=makeMove(st,p,a);let v;const forcing=tacticalMove(st,p,a,enemyW)||capture;
-      const extension=((forcing||recapture)&&allowExtension&&depth<=11&&depth>=2)?1:0;
-      const nextDepth=depth-1+extension;
-      const childAllowExtension=!extension;
-      const quiet=!forcing&&!capture;
-      if(i>=4&&depth>=5&&quiet){
-        // Late move reduction: spend depth on forcing moves, but re-search any quiet move
-        // that proves better than the current alpha bound.
-        v=-search(st,enemy,Math.max(0,nextDepth-1),-alpha-1,-alpha,ply+1,a,childAllowExtension);
-        if(v>alpha&&v<beta){
-          v=-search(st,enemy,nextDepth,-beta,-alpha,ply+1,a,childAllowExtension);
-        }
-      }else if(i===0){
-        v=-search(st,enemy,nextDepth,-beta,-alpha,ply+1,a,childAllowExtension);
-      }else{
-        v=-search(st,enemy,nextDepth,-alpha-1,-alpha,ply+1,a,childAllowExtension);
-        if(v>alpha&&v<beta){
-          v=-search(st,enemy,nextDepth,-beta,-alpha,ply+1,a,childAllowExtension);
-        }
-      }
-      unmakeMove(st,p,u);
-      if(v>best){best=v;bestMove=a;}if(v>alpha)alpha=v;
-      if(alpha>=beta){noteCutoff(a,depth);break;}
+    // Very conservative null-move pruning. Disabled with reserves and near breakthrough tactics,
+    // where zugzwang is common in this game.
+    const myBase=p==='blue'?0:3,myHand=st.h[myBase]+st.h[myBase+1]+st.h[myBase+2];
+    if(false && depth>=7&&myHand===0&&enemyW===0&&threatCount(st,p,1)===0&&st.quiet<80&&acts.length>10&&materialCount(st)>10){
+      const R=depth>=10?3:2;const v=-search(st,enemy,Math.max(0,depth-1-R),-beta,-beta+1,ply+1,lastMove,false);if(v>=beta)return v;
     }
-    let flag=1;if(best<=origAlpha)flag=3;else if(best>=beta)flag=2;if(ttSafe) storeTT(keyA,keyB,depth,best,flag,bestMove,ply);return best;
+
+    for(let i=0;i<searchActs.length;i++){
+      const a=searchActs[i],capture=isCapture(st,a),forcing=tacticalMove(st,p,a,enemyW),recapture=isRecapture(a,lastMove),u=makeMove(st,p,a);let extension=0;
+      const ownThreatAfter=threatCount(st,p,2),enemyThreatAfter=threatCount(st,enemy,2);
+      if(allowExtension&&depth<=12&&depth>=2&&(forcing||recapture||enemyThreatAfter>enemyW||ownThreatAfter>0))extension=1;
+      if(allowExtension&&depth<=10&&depth>=4&&a.type==='drop'&&forwardDist(a.tr,p)<=1)extension=1;
+      let nextDepth=depth-1+extension,v;
+      const quiet=!forcing&&!capture&&!recapture;
+      const raceCritical=ownThreatAfter>0||enemyThreatAfter>0||enemyThreatAfter!==enemyW;
+      if(i>=6&&depth>=6&&quiet&&!raceCritical){
+        let reduction=(i>=18?2:1);if(depth<=7)reduction=1;
+        v=-search(st,enemy,Math.max(0,nextDepth-reduction),-alpha-1,-alpha,ply+1,a,extension?false:true);
+        if(v>alpha&&v<beta)v=-search(st,enemy,nextDepth,-beta,-alpha,ply+1,a,extension?false:true);
+      }else if(i===0)v=-search(st,enemy,nextDepth,-beta,-alpha,ply+1,a,extension?false:true);
+      else {v=-search(st,enemy,nextDepth,-alpha-1,-alpha,ply+1,a,extension?false:true);if(v>alpha&&v<beta)v=-search(st,enemy,nextDepth,-beta,-alpha,ply+1,a,extension?false:true);}
+      unmakeMove(st,p,u);if(v>best){best=v;bestMove=a;}if(v>alpha)alpha=v;if(alpha>=beta){noteCutoff(a,depth);break;}
+    }
+    let flag=1;if(best<=origAlpha)flag=3;else if(best>=beta)flag=2;if(ttSafe)storeTT(keyA,keyB,depth,best,flag,bestMove,ply);return best;
   }
 
-  function rootSearch(st,p,depth,previousScore,preferredMove,ply){
-    const enemy=opp(p),enemyWins=threatCount(st,enemy,1),acts=[];legalActs(st,p,acts,enemyWins);if(acts.length===0)return{score:-MATE,move:null};
-    orderMoves(st,p,acts,depth,preferredMove,enemyWins,ply);
-    if((ply===0) && depth<=3 && (rootMoveCount||0)<4 && acts.length>1){
-      const forcedExists = acts.some(a=>moveIsForcing(st,p,a,enemyWins));
-      if(!forcedExists){
-        for(let i=0;i<acts.length;i++) acts[i]._score=openingNoise(acts[i],ply);
-        acts.sort((a,b)=>((b._score||0)-(a._score||0)));
-        for(let i=0;i<acts.length;i++) delete acts[i]._score;
-      }
+  function rootPreviewScore(st,p,a,enemyWins){
+    const u=makeMove(st,p,a),enemy=opp(p);
+    let ownW=threatCount(st,p,4),oppW=threatCount(st,enemy,4),s=ownW*760000-oppW*980000;
+    if(a.type==='move'&&st.b[idx(a.tr,a.tc)]===0){s+=forwardDist(a.tr,p)<=2?18000:0;}
+    if(a.type==='drop'){s+=immediateDropThreats(st,p,a.t)*2400;}
+    if(enemyWins>0&&oppW===0)s+=520000;
+    unmakeMove(st,p,u);
+    return s;
+  }
+  // ---------- opening diversification ----------
+  // We keep the engine deterministic inside a search, then deliberately diversify only
+  // genuinely close opening candidates. This prevents repetitive book-like first moves
+  // without allowing randomness to override a tactical advantage.
+  function openingRand32(x){
+    x>>>=0; x^=x>>>16; x=Math.imul(x,0x45d9f3b)>>>0; x^=x>>>16; x=Math.imul(x,0x45d9f3b)>>>0; return (x^(x>>>16))>>>0;
+  }
+  function openingJitter(move,seed,ply){
+    if(ply>5 || rootMoveCount>=10) return 0;
+    const k=(moveKey(move)^seed^Math.imul((ply+1)>>>0,0x9e3779b9))>>>0;
+    return (openingRand32(k)%10000)/10000;
+  }
+  function chooseOpeningCandidate(st,candidates,seed,ply){
+    if(!candidates||candidates.length<2 || ply!==0 || rootMoveCount!==0) return null;
+    const top=candidates.slice(0,10);
+    const best=top[0].score;
+    // The opening pool is the engine's best 10 searched moves, but only candidates
+    // that remain close to the principal move are eligible. This gives variety without
+    // sacrificing tactical soundness.
+    const window=520;
+    const pool=[];
+    for(let i=0;i<top.length;i++){
+      const c=top[i];
+      if(c.score>=best-window && !isCapture(st,c.move) && c.move.tr!==goal('blue') && c.move.tr!==goal('red')) pool.push(c);
     }
-    let alpha=-Infinity,beta=Infinity;const useAsp=depth>=4&&Number.isFinite(previousScore);if(useAsp){alpha=previousScore-650;beta=previousScore+650;}
-    for(let attempt=0;attempt<2;attempt++){
-      let best=-Infinity,bestMove=null,a0=alpha,b0=beta;
-      const lowMaterial = materialCount(st)<=7;
-      const baseLimit = lowMaterial ? acts.length : (depth>=7 ? Math.min(14,acts.length) : (depth>=5 ? Math.min(18,acts.length) : (depth===4 ? Math.min(20,acts.length) : (depth===3 ? Math.min(22,acts.length) : acts.length))));
-      const rootActs=[];
-      for(let i=0;i<acts.length;i++) if(i<baseLimit || moveIsForcing(st,p,acts[i],enemyWins)) rootActs.push(acts[i]);
-      const candidates=[];
+    if(pool.length<2) return null;
+    // Randomness is used only to break close opening ties. Stronger candidates get a
+    // higher probability, and the seed changes every new game.
+    let total=0;
+    const weights=new Array(pool.length);
+    for(let i=0;i<pool.length;i++){
+      const gap=Math.max(0,best-pool[i].score);
+      const w=Math.max(0.10,1-gap/window*0.82);
+      weights[i]=w;
+      total+=w;
+    }
+    let r=((openingRand32((seed^0xA53C9E17)>>>0)%1000000)/1000000)*total;
+    for(let i=0;i<pool.length;i++){
+      r-=weights[i];
+      if(r<=0)return pool[i].move;
+    }
+    return pool[pool.length-1].move;
+  }
+
+  function rootSearch(st,p,depth,previousScore,preferredMove){
+    const enemy=opp(p),enemyWins=threatCount(st,enemy,1),acts=[];
+    legalActs(st,p,acts,enemyWins);if(!acts.length)return{score:-MATE,move:null,candidates:[]};
+    orderMoves(st,p,acts,depth,preferredMove,enemyWins,0);
+    // Root preview: prioritize moves that change the immediate breakthrough race, not merely
+    // moves that look attractive by static ordering. This is especially important for quiet blocks.
+    if(acts.length>1){
+      for(let i=0;i<acts.length;i++)acts[i]._preview=rootPreviewScore(st,p,acts[i],enemyWins);
+      acts.sort((a,b)=>((b._preview-a._preview)||0)||((scoreMove(st,p,b,depth,preferredMove,enemyWins,0)-scoreMove(st,p,a,depth,preferredMove,enemyWins,0))));
+      for(let i=0;i<acts.length;i++)delete acts[i]._preview;
+    }
+    let limit;
+    if(materialCount(st)<=8) limit=acts.length;
+    else if(depth<=2) limit=acts.length;
+    else if(depth===3) limit=Math.min(128,acts.length);
+    else if(depth===4) limit=Math.min(96,acts.length);
+    else if(depth===5) limit=Math.min(72,acts.length);
+    else if(depth<=7) limit=Math.min(60,acts.length);
+    else if(depth<=10) limit=Math.min(52,acts.length);
+    else limit=Math.min(46,acts.length);
+    const rootActs=[];for(let i=0;i<acts.length;i++)if(i<limit||moveIsForcing(st,p,acts[i],enemyWins))rootActs.push(acts[i]);
+
+    let alpha=-Infinity,beta=Infinity;
+    if(depth>=5&&Number.isFinite(previousScore)){const w=950+depth*125;alpha=previousScore-w;beta=previousScore+w;}
+    for(let attempt=0;attempt<3;attempt++){
+      let best=-Infinity,bestMove=null,a0=alpha,b0=beta;const candidates=[];
       for(let i=0;i<rootActs.length;i++){
-        const a=rootActs[i],u=makeMove(st,p,a);
-        const v=-search(st,enemy,depth-1,-b0,-a0,1,a,true);unmakeMove(st,p,u);
-        candidates.push({move:a,score:v,order:i});
+        const a=rootActs[i],u=makeMove(st,p,a),v=-search(st,enemy,depth-1,-b0,-a0,1,a,true);
+        unmakeMove(st,p,u);candidates.push({move:a,score:v,order:i});
         if(v>best){best=v;bestMove=a;}if(v>a0)a0=v;if(a0>=b0)break;
       }
       candidates.sort((x,y)=>y.score-x.score);
-      if(!useAsp|| (best>alpha&&best<beta))return{score:best,move:bestMove,candidates:candidates.slice(0,5)};
+      const inWindow=best>alpha&&best<beta;
+      if(inWindow || !Number.isFinite(previousScore) || attempt>=1){
+        // Multi-PV refinement: when the leading moves are close, re-search the top few with
+        // full windows. This prevents a PVS/lower-bound artifact from making the engine choose
+        // a superficially attractive move while a quieter defensive move is actually best.
+        if(depth>=5 && candidates.length>1 && Date.now()-searchStart<TIME_LIMIT-900){
+          const gap=Math.abs(candidates[0].score-candidates[1].score);
+          if(gap<2600){
+            const refine=Math.min(4,candidates.length);
+            for(let i=0;i<refine;i++){
+              if(Date.now()-searchStart>=TIME_LIMIT-420)break;
+              const c=candidates[i],u=makeMove(st,p,c.move);
+              const rv=-search(st,enemy,depth-1,-MATE,MATE,1,c.move,true);
+              unmakeMove(st,p,u);c.score=rv;
+            }
+            candidates.sort((x,y)=>y.score-x.score);
+            best=candidates[0].score;bestMove=candidates[0].move;
+          }
+        }
+        return{score:best,move:bestMove,candidates:candidates.slice(0,10)};
+      }
       alpha=-Infinity;beta=Infinity;
     }
-    return{score:0,move:null};
+    return{score:0,move:null,candidates:[]};
   }
 
-  function toExternal(a){if(!a)return null;if(a.type==='move')return{type:'move',from:{r:a.fr,c:a.fc},to:{r:a.tr,c:a.tc}};return{type:'drop',pieceType:TYPES[a.t],to:{r:a.tr,c:a.tc}};}
   function antiBlunderAudit(st,p,candidates,baseScore,depthBudget){
     if(!candidates||!candidates.length)return null;
-    let best=null,bestScore=-Infinity;
-    const enemy=opp(p);
-    const auditDepth=Math.max(1,Math.min(3,depthBudget||2));
-    for(let i=0;i<Math.min(4,candidates.length);i++){
-      if(Date.now()-searchStart>TIME_LIMIT-350)break;
+    let best=null,bestScore=-Infinity;const enemy=opp(p);
+    const auditDepth=Math.max(2,Math.min(5,depthBudget||3));
+    for(let i=0;i<Math.min(10,candidates.length);i++){
+      if(Date.now()-searchStart>TIME_LIMIT-520)break;
       const a=candidates[i].move;if(!a)continue;
-      const u=makeMove(st,p,a);
-      let score;
+      const u=makeMove(st,p,a);let score=-Infinity,immediateLoss=false;
       try{
-        const enemyWins=winningMoves(st,enemy,[]);
-        if(enemyWins.length) score=-MATE+2;
-        else {
-          const enemyThreat=threatCount(st,enemy,1);
-          // Verify the opponent's strongest immediate reply before trusting the root score.
+        const enemyWinsNow=winningMoves(st,enemy,[]);
+        if(enemyWinsNow.length){immediateLoss=true;score=-MATE+2;}
+        else{
+          const enemyThreats=threatCount(st,enemy,4);
           score=-search(st,enemy,auditDepth,-MATE,MATE,1,a,true);
-          if(enemyThreat>0) score-=220;
+          if(enemyThreats>=2)score-=900;
+          else if(enemyThreats===1)score-=350;
+          // A move that creates a new forcing race for us gets a small stability bonus.
+          const ourThreats=threatCount(st,p,4);score+=ourThreats*180;
         }
       }catch(err){unmakeMove(st,p,u);if(err&&err.message==='TO')break;throw err;}
       unmakeMove(st,p,u);
-      // Never let a shallow audit overturn a clearly winning tactical result unless it finds
-      // an immediate loss. Otherwise use it only to catch suspiciously fragile moves.
-      const immediateLoss=score<=-MATE+10;
       if(immediateLoss)continue;
-      const adjusted=score + Math.min(120,Math.max(0,candidates[i].score-baseScore+120));
-      if(best===null || adjusted>bestScore){best=a;bestScore=adjusted;}
+      const rootGap=Math.max(0,baseScore-candidates[i].score);
+      const auditPenalty = Math.max(0, -score);
+      const adjusted = candidates[i].score - Math.min(1400,rootGap)*0.75 - Math.min(2200,auditPenalty)*0.35;
+      if(adjusted>bestScore){bestScore=adjusted;best=a;}
     }
     return best;
   }
 
+  function toExternal(a){if(!a)return null;if(a.type==='move')return{type:'move',from:{r:a.fr,c:a.fc},to:{r:a.tr,c:a.tc}};return{type:'drop',pieceType:TYPES[a.t],to:{r:a.tr,c:a.tc}};}
 
   self.onmessage=function(e){
     const d=e.data||{};if(!d.board||!d.hands||!d.aiPlayer)return;
-    const st=fromInput(d.board,d.hands),ai=d.aiPlayer;
-    if((d.moveCount||0)===0){clearTT();moveHistory.fill(0);dropHistory.fill(0);for(let i=0;i<killers.length;i++){killers[i][0]=null;killers[i][1]=null;}}
-    gameSeed=mix32(Number(d.openingSeed)||((Date.now()^Math.floor(Math.random()*0xffffffff))>>>0));
-    rootMoveCount=Number(d.moveCount)||0;
-    searchStart=Date.now();nodes=0;stop=false;rootRep=Math.max(1,Number(d.rootRepetitionCount)||1);
-    const rk=keyFor(st,ai);rootKeyA=rk[0];rootKeyB=rk[1];pathA.fill(0);pathB.fill(0);
+    const st=fromInput(d.board,d.hands,d.quietTurnCount||0),ai=d.aiPlayer;
+    if((d.moveCount||0)===0){clearTT();for(let i=0;i<killers.length;i++){killers[i][0]=null;killers[i][1]=null;killers[i][2]=null;}moveHistory.fill(0);dropHistory.fill(0);}
+    ttGeneration=(ttGeneration+1)&255;if(ttGeneration===0)ttGeneration=1;
+    gameSeed=mix32(Number(d.openingSeed)||((Date.now()^Math.floor(Math.random()*0xffffffff))>>>0));rootMoveCount=Number(d.moveCount)||0;rootRep=Math.max(1,Number(d.rootRepetitionCount)||1);
+    searchStart=Date.now();nodes=0;stop=false;ttEnabled=true;pathA.fill(0);pathB.fill(0);pathPly.fill(0);
+    const rk=keyFor(st,ai);rootKeyA=rk[0];rootKeyB=rk[1];pathA[0]=rootKeyA;pathB[0]=rootKeyB;
     const rootActs=[];const enemyWins=threatCount(st,opp(ai),1);legalActs(st,ai,rootActs,enemyWins);
-    if(rootActs.length===0){self.postMessage({bestAction:null,stats:{depth:0,nodes,score:-MATE,engine:'SSS Ultimate Anti-Blunder Engine v6'}});return;}
-    const immediate=winningMoves(st,ai,[]);if(immediate.length>0){
-      self.postMessage({bestAction:toExternal(immediate[0]),stats:{depth:1,nodes:1,score:MATE,engine:'SSS Ultimate Anti-Blunder Engine v6'}});return;
-    }
-    let bestMove=rootActs[0],bestVal=-Infinity,completedDepth=0,previousScore=0,preferredMove=null;
-    // Search deeper while preserving a fully completed best move on timeout.
-    for(let depth=1;depth<=40;depth++){
-      if(Date.now()-searchStart>TIME_LIMIT)break;
+    if(!rootActs.length){self.postMessage({bestAction:null,stats:{depth:0,nodes,score:-MATE,engine:'SSS Titan Engine v9 - Material Guard'}});return;}
+    const immediate=winningMoves(st,ai,[]);if(immediate.length){self.postMessage({bestAction:toExternal(immediate[0]),stats:{depth:1,nodes:1,score:MATE,engine:'SSS Titan Engine v9 - Material Guard'}});return;}
+    let bestMove=rootActs[0],bestVal=-Infinity,completedDepth=0,previousScore=0,preferredMove=null,lastCandidates=null;
+    for(let depth=1;depth<=50;depth++){
+      if(Date.now()-searchStart>TIME_LIMIT-80)break;
       try{
-        const result=rootSearch(st,ai,depth,completedDepth>1?previousScore:NaN,preferredMove,0);
-        if(result.move){bestMove=result.move;bestVal=result.score;previousScore=result.score;preferredMove=result.move;}
-        completedDepth=depth;
-        // Final anti-blunder verification: re-check the strongest few root candidates from
-        // the completed iteration against the opponent's best immediate reply. This is a
-        // targeted verification search, not a second full root search.
-        if(depth>=3 && result.candidates && Date.now()-searchStart>TIME_LIMIT-1200){
-          const audited=antiBlunderAudit(st,ai,result.candidates,bestVal,Math.min(3,depth-1));
-          if(audited)bestMove=audited;
-        }
+        const result=rootSearch(st,ai,depth,completedDepth>=3?previousScore:NaN,preferredMove);
+        if(result.move){bestMove=result.move;bestVal=result.score;previousScore=result.score;preferredMove=result.move;lastCandidates=result.candidates;completedDepth=depth;}
+        if(depth>=4&&lastCandidates&&Date.now()-searchStart>TIME_LIMIT-900){const audited=antiBlunderAudit(st,ai,lastCandidates,bestVal,Math.min(4,depth-1));if(audited)bestMove=audited;}
         if(Math.abs(bestVal)>=MATE-100)break;
       }catch(err){if(err&&err.message==='TO')break;throw err;}
     }
-    self.postMessage({bestAction:toExternal(bestMove),stats:{depth:completedDepth,nodes,score:bestVal,engine:'SSS Ultimate Anti-Blunder Engine v6'}});
-  };
-`;
+    // Diversify only after the strongest completed search. This means randomness can never
+    // change the tactical search itself; it only chooses among genuinely close opening moves.
+    if(completedDepth>=3 && rootMoveCount===0 && lastCandidates){
+      const varied=chooseOpeningCandidate(st,lastCandidates,gameSeed,0);
+      if(varied && Math.abs(bestVal)<MATE-1000)bestMove=varied;
+    }
+    self.postMessage({bestAction:toExternal(bestMove),stats:{depth:completedDepth,nodes,score:bestVal,engine:'SSS Titan Engine v9 - Material Guard'}});
+  };`;
+
 
   const blob = new Blob([workerCode], { type: 'application/javascript' });
   const aiWorker = new Worker(URL.createObjectURL(blob));
@@ -1352,6 +1332,31 @@ const workerCode = `
   }
 
   setupChatInput();
+
+  // Mobile-safe primary controls: pointer events work across touch, pen and mouse.
+  (function bindMobileOnlineControls(){
+    const bind=(el,handler)=>{
+      if(!el || el.dataset.pointerBound) return;
+      el.dataset.pointerBound='1';
+      el.addEventListener('pointerup', e=>{
+        if(e.pointerType==='touch'){
+          e.preventDefault();
+          el.dataset.suppressClickUntil=String(Date.now()+550);
+          handler();
+        }
+      }, {passive:false});
+      el.addEventListener('click', e=>{
+        const until=Number(el.dataset.suppressClickUntil||0);
+        if(until>Date.now()){ e.preventDefault(); e.stopPropagation(); return; }
+        handler();
+      });
+      el.addEventListener('keydown', e=>{
+        if(e.key==='Enter' || e.key===' '){ e.preventDefault(); handler(); }
+      });
+    };
+    bind(document.getElementById('resignGameBtn'), ()=>resignCurrentGame());
+    bind(document.getElementById('offerDrawBtn'), ()=>offerDraw());
+  })();
 
   function showCreateRoomUI() {
     document.getElementById('onlineInitialOptions').classList.add('hidden'); document.getElementById('onlineHostView').classList.remove('hidden');
@@ -1578,6 +1583,10 @@ const workerCode = `
     moveHistory = []; viewHistoryIndex = -1;
     drawPositionCounts = new Map();
     quietTurnCount = 0;
+    // Fresh per-game seed: opening play can vary while the actual search remains tactical.
+    pveOpeningSeed = (globalThis.crypto && globalThis.crypto.getRandomValues)
+      ? globalThis.crypto.getRandomValues(new Uint32Array(1))[0] >>> 0
+      : ((Date.now() ^ Math.floor(Math.random()*0xffffffff)) >>> 0);
     onlineGameEndedByAbandonment = false;
     closeOnlineChat(); clearChatUI();
     document.getElementById('moveLogList').innerHTML = '';
