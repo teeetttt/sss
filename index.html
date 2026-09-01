@@ -1655,7 +1655,7 @@ const workerCode = `
       const {r:fr,c:fc}=a.from, {r:tr,c:tc}=a.to, srcP=board[fr][fc], tgtP=board[tr][tc];
       if(tgtP) hands[actP].push(tgtP.type);
       board[tr][tc]=srcP; board[fr][fc]=null; lastActionPos={from:{r:fr,c:fc}, to:{r:tr,c:tc}};
-      addLogEntry(actP, `${SYMBOLS[srcP.type]} ${getCoordNotation(fr,fc)} ➔ ${getCoordNotation(tr,tc)}`);
+      addLogEntry(actP, `${SYMBOLS[srcP.type]} ${getCoordNotation(fr,fc)} ${getCoordNotation(tr,tc)}`);
       checkWinOrNext(tr, tc, resetsQuietCount);
     } else {
       const {r,c}=a.to; board[r][c]={player:actP, type:a.pieceType};
