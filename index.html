@@ -940,7 +940,18 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     for(let k=0;k<3;k++)if(depth<MAX_PLY&&sameMove(killers[depth][k],a)){s+=(k===0?3200000:(k===1?1800000:900000));break;}
     return s;
   }
-  function orderMoves(st,p,acts,depth,ttMove,enemyWins,ply){for(let i=0;i<acts.length;i++)acts[i]._score=scoreMove(st,p,acts[i],depth,ttMove,enemyWins,ply);acts.sort((a,b)=>b._score-a._score);for(let i=0;i<acts.length;i++)delete acts[i]._score;return acts;}
+  function orderMoves(st,p,acts,depth,ttMove,enemyWins,ply){
+    const n=acts.length;if(n<2)return acts;
+    // Score into detached wrapper objects rather than tagging acts[i]._score: adding then
+    // deleting a property on the move objects themselves would push them into V8's slow
+    // "dictionary mode" for the rest of the node, and those same objects have every field
+    // (type/fr/fc/tr/tc/t) re-read many times right after this in the search loop.
+    const scored=new Array(n);
+    for(let i=0;i<n;i++)scored[i]={a:acts[i],s:scoreMove(st,p,acts[i],depth,ttMove,enemyWins,ply),i};
+    scored.sort((x,y)=>(y.s-x.s)||(x.i-y.i)); // explicit index tie-break == old stable sort, byte-for-byte
+    for(let i=0;i<n;i++)acts[i]=scored[i].a;
+    return acts;
+  }
   function candidateLimit(depth,count,lowMaterial){
     if(lowMaterial)return count;
     if(depth<=2)return count;
@@ -991,11 +1002,18 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
 
     for(let i=0;i<searchActs.length;i++){
       const a=searchActs[i],capture=isCapture(st,a),forcing=tacticalMove(st,p,a,enemyW),recapture=isRecapture(a,lastMove),u=makeMove(st,p,a);let extension=0;
-      const ownThreatAfter=threatCount(st,p,2),enemyThreatAfter=threatCount(st,enemy,2);
+      const quiet=!forcing&&!capture&&!recapture;
+      // Only quiet moves can reach either branch below that reads these (a forcing/capture/
+      // recapture move already resolves the extension check via forcing||recapture, and
+      // isCapture(a) always implies forcing via tacticalMove, so capture can't slip past
+      // "quiet"), and only within the depth/index windows those branches actually use.
+      let ownThreatAfter=0,enemyThreatAfter=0;
+      if(quiet&&((allowExtension&&depth<=12&&depth>=2)||(i>=6&&depth>=6))){
+        ownThreatAfter=threatCount(st,p,2);enemyThreatAfter=threatCount(st,enemy,2);
+      }
       if(allowExtension&&depth<=12&&depth>=2&&(forcing||recapture||enemyThreatAfter>enemyW||ownThreatAfter>0))extension=1;
       if(allowExtension&&depth<=10&&depth>=4&&a.type==='drop'&&forwardDist(a.tr,p)<=1)extension=1;
       let nextDepth=depth-1+extension,v;
-      const quiet=!forcing&&!capture&&!recapture;
       const raceCritical=ownThreatAfter>0||enemyThreatAfter>0||enemyThreatAfter!==enemyW;
       if(i>=6&&depth>=6&&quiet&&!raceCritical){
         let reduction=(i>=18?2:1);if(depth<=7)reduction=1;
@@ -1068,9 +1086,10 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     // Root preview: prioritize moves that change the immediate breakthrough race, not merely
     // moves that look attractive by static ordering. This is especially important for quiet blocks.
     if(acts.length>1){
-      for(let i=0;i<acts.length;i++)acts[i]._preview=rootPreviewScore(st,p,acts[i],enemyWins);
-      acts.sort((a,b)=>((b._preview-a._preview)||0)||((scoreMove(st,p,b,depth,preferredMove,enemyWins,0)-scoreMove(st,p,a,depth,preferredMove,enemyWins,0))));
-      for(let i=0;i<acts.length;i++)delete acts[i]._preview;
+      const n=acts.length,scored=new Array(n);
+      for(let i=0;i<n;i++){const a=acts[i];scored[i]={a,prev:rootPreviewScore(st,p,a,enemyWins),sc:scoreMove(st,p,a,depth,preferredMove,enemyWins,0)};}
+      scored.sort((x,y)=>((y.prev-x.prev)||0)||(y.sc-x.sc));
+      for(let i=0;i<n;i++)acts[i]=scored[i].a;
     }
     let limit;
     if(materialCount(st)<=8) limit=acts.length;
