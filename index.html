@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>SSS - Shear, Sheet, Stone</title>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E✂️%3C/text%3E%3C/svg%3E">
-
-
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; user-select: none; }
     body {
@@ -233,27 +230,13 @@
       
       @media (max-width: 768px) {
         .online-game-controls {
-          position: relative;
-          top: auto;
-          right: auto;
-          z-index: 20;
-          width: 100%;
-          max-width: calc(100vw - 24px);
-          justify-content: center;
-          margin: 4px auto 0;
-          padding: 0;
-          pointer-events: auto;
-          touch-action: manipulation;
-        }
-        .online-game-controls .btn-resign,
-        .online-game-controls .btn-draw,
-        .online-game-controls .online-chat-toggle {
-          position: relative;
-          z-index: 21;
-          pointer-events: auto;
-          touch-action: manipulation;
-          -webkit-tap-highlight-color: transparent;
-          user-select: none;
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          z-index: 100;
+          width: auto;
+          justify-content: flex-end;
+          margin-bottom: 0;
         }
       }
     .online-game-controls.visible { display: flex; }
@@ -421,7 +404,7 @@
       .status-badge { padding: 7px 12px; font-size: 12px; max-width: calc(100vw - 132px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .btn-flip { padding: 7px 10px; font-size: 12px; }
       .online-game-controls { width: auto; justify-content: center; margin-bottom: 0; }
-      .btn-resign, .btn-draw { padding: 9px 11px; font-size: 12px; min-height: 38px; }
+      .btn-resign, .btn-draw { padding: 7px 10px; font-size: 12px; }
       #onlineMenuScreen .modal-box { width: min(100%, 520px); max-height: calc(100vh - 28px); overflow-y: auto; padding: 20px 14px; }
       #onlineMenuScreen .btn { min-width: 0; padding: clamp(11px, 3vw, 16px) clamp(12px, 5vw, 28px); font-size: clamp(13px, 3.5vw, 16px); }
       #onlineMenuScreen .btn-group { max-width: min(100%, 360px); }
@@ -595,8 +578,8 @@
         <div class="status-badge" id="statusBar">Waiting to Start</div>
         <button class="btn-flip" onclick="toggleBoardFlip()">🔄 Flip Board</button>
         <div class="online-game-controls" id="onlineGameControls">
-          <button type="button" class="btn-resign" id="resignGameBtn" onclick="resignCurrentGame()">Resign</button>
-          <button type="button" class="btn-draw" id="offerDrawBtn" onclick="offerDraw()" style="display:none;">Offer Draw</button>
+          <button class="btn-resign" onclick="resignCurrentGame()">Resign</button>
+          <button class="btn-draw" id="offerDrawBtn" onclick="offerDraw()" style="display:none;">Offer Draw</button>
           <button class="online-chat-toggle" id="onlineChatToggle" onclick="toggleOnlineChat()">💬 Chat<span class="chat-unread-dot" id="chatUnreadDot"></span></button>
         </div>
         <button class="btn" id="mainMenuButton" style="padding: 6px 14px; font-size: 13px;" onclick="showStartScreen()">Main Menu</button>
@@ -953,14 +936,17 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     return acts;
   }
   function candidateLimit(depth,count,lowMaterial){
+    // Keep a broad tactical horizon. This game has reserve drops and breakthrough races,
+    // so a quiet move that is not locally forcing can still become the best defense a ply
+    // later. We therefore prune less aggressively than the previous 30-move ceiling.
     if(lowMaterial)return count;
     if(depth<=2)return count;
-    if(depth===3)return Math.min(96,count);
-    if(depth===4)return Math.min(64,count);
-    if(depth===5)return Math.min(48,count);
-    if(depth===6)return Math.min(40,count);
-    if(depth<=8)return Math.min(34,count);
-    return Math.min(30,count);
+    if(depth===3)return Math.min(128,count);
+    if(depth===4)return Math.min(96,count);
+    if(depth===5)return Math.min(72,count);
+    if(depth===6)return Math.min(60,count);
+    if(depth<=8)return Math.min(48,count);
+    return Math.min(40,count);
   }
   function trimSearchMoves(st,p,acts,depth,enemyWins){
     if(acts.length<=candidateLimit(depth,acts.length,materialCount(st)<=8))return acts;
@@ -1093,13 +1079,12 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     }
     let limit;
     if(materialCount(st)<=8) limit=acts.length;
-    else if(depth<=2) limit=acts.length;
-    else if(depth===3) limit=Math.min(128,acts.length);
-    else if(depth===4) limit=Math.min(96,acts.length);
-    else if(depth===5) limit=Math.min(72,acts.length);
-    else if(depth<=7) limit=Math.min(60,acts.length);
-    else if(depth<=10) limit=Math.min(52,acts.length);
-    else limit=Math.min(46,acts.length);
+    else if(depth<=3) limit=acts.length;
+    else if(depth===4) limit=Math.min(128,acts.length);
+    else if(depth===5) limit=Math.min(104,acts.length);
+    else if(depth<=7) limit=Math.min(88,acts.length);
+    else if(depth<=10) limit=Math.min(72,acts.length);
+    else limit=Math.min(60,acts.length);
     const rootActs=[];for(let i=0;i<acts.length;i++)if(i<limit||moveIsForcing(st,p,acts[i],enemyWins))rootActs.push(acts[i]);
 
     let alpha=-Infinity,beta=Infinity;
@@ -1172,6 +1157,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
 
   self.onmessage=function(e){
     const d=e.data||{};if(!d.board||!d.hands||!d.aiPlayer)return;
+    const requestId=d.requestId;
     const st=fromInput(d.board,d.hands,d.quietTurnCount||0),ai=d.aiPlayer;
     if((d.moveCount||0)===0){clearTT();for(let i=0;i<killers.length;i++){killers[i][0]=null;killers[i][1]=null;killers[i][2]=null;}moveHistory.fill(0);dropHistory.fill(0);}
     ttGeneration=(ttGeneration+1)&255;if(ttGeneration===0)ttGeneration=1;
@@ -1179,8 +1165,8 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     searchStart=Date.now();nodes=0;stop=false;ttEnabled=true;pathA.fill(0);pathB.fill(0);pathPly.fill(0);
     const rk=keyFor(st,ai);rootKeyA=rk[0];rootKeyB=rk[1];pathA[0]=rootKeyA;pathB[0]=rootKeyB;
     const rootActs=[];const enemyWins=threatCount(st,opp(ai),1);legalActs(st,ai,rootActs,enemyWins);
-    if(!rootActs.length){self.postMessage({bestAction:null,stats:{depth:0,nodes,score:-MATE,engine:'SSS Titan Engine v9 - Material Guard'}});return;}
-    const immediate=winningMoves(st,ai,[]);if(immediate.length){self.postMessage({bestAction:toExternal(immediate[0]),stats:{depth:1,nodes:1,score:MATE,engine:'SSS Titan Engine v9 - Material Guard'}});return;}
+    if(!rootActs.length){self.postMessage({requestId,bestAction:null,stats:{depth:0,nodes,score:-MATE,engine:'SSS Titan Engine v9 - Material Guard'}});return;}
+    const immediate=winningMoves(st,ai,[]);if(immediate.length){self.postMessage({requestId,bestAction:toExternal(immediate[0]),stats:{depth:1,nodes:1,score:MATE,engine:'SSS Titan Engine v9 - Material Guard'}});return;}
     let bestMove=rootActs[0],bestVal=-Infinity,completedDepth=0,previousScore=0,preferredMove=null,lastCandidates=null;
     for(let depth=1;depth<=50;depth++){
       if(Date.now()-searchStart>TIME_LIMIT-80)break;
@@ -1197,13 +1183,22 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
       const varied=chooseOpeningCandidate(st,lastCandidates,gameSeed,0);
       if(varied && Math.abs(bestVal)<MATE-1000)bestMove=varied;
     }
-    self.postMessage({bestAction:toExternal(bestMove),stats:{depth:completedDepth,nodes,score:bestVal,engine:'SSS Titan Engine v9 - Material Guard'}});
-  };`;
-
+    self.postMessage({requestId,bestAction:toExternal(bestMove),stats:{depth:completedDepth,nodes,score:bestVal,engine:'SSS Titan Engine v9 - Material Guard'}});
+  }`;
 
   const blob = new Blob([workerCode], { type: 'application/javascript' });
   const aiWorker = new Worker(URL.createObjectURL(blob));
-  aiWorker.onmessage = function(e) { if(e.data.bestAction) executeAIAction(e.data.bestAction); };
+  let aiRequestSerial = 0;
+  let activeAIRequest = 0;
+  function invalidateAIRequest() { activeAIRequest = ++aiRequestSerial; }
+  function shouldApplyAIResult(result, requestId, activeRequest, mode, over, currentTurn, aiSide) {
+    return !!result && requestId === activeRequest && mode === 'pve' && !over && currentTurn !== aiSide;
+  }
+  aiWorker.onmessage = function(e) {
+    const d = e.data || {};
+    if(!shouldApplyAIResult(d.bestAction, d.requestId, activeAIRequest, gameMode, gameOver, turn, playerSide)) return;
+    executeAIAction(d.bestAction);
+  };
 
   const playlist = [ { name: '🎵 · 01', src: 'bgm1.mp3' }, { name: '🎵 · 02', src: 'bgm2.mp3' }, { name: '🎵 · 03', src: 'bgm3.mp3' } ];
   let isMuted = false, currentVolume = 0.4, audioStarted = false, isFlipped = false, hasViewedTutorial = false, lastActionPos = null;
@@ -1354,31 +1349,6 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   }
 
   setupChatInput();
-
-  // Mobile-safe primary controls: pointer events work across touch, pen and mouse.
-  (function bindMobileOnlineControls(){
-    const bind=(el,handler)=>{
-      if(!el || el.dataset.pointerBound) return;
-      el.dataset.pointerBound='1';
-      el.addEventListener('pointerup', e=>{
-        if(e.pointerType==='touch'){
-          e.preventDefault();
-          el.dataset.suppressClickUntil=String(Date.now()+550);
-          handler();
-        }
-      }, {passive:false});
-      el.addEventListener('click', e=>{
-        const until=Number(el.dataset.suppressClickUntil||0);
-        if(until>Date.now()){ e.preventDefault(); e.stopPropagation(); return; }
-        handler();
-      });
-      el.addEventListener('keydown', e=>{
-        if(e.key==='Enter' || e.key===' '){ e.preventDefault(); handler(); }
-      });
-    };
-    bind(document.getElementById('resignGameBtn'), ()=>resignCurrentGame());
-    bind(document.getElementById('offerDrawBtn'), ()=>offerDraw());
-  })();
 
   function showCreateRoomUI() {
     document.getElementById('onlineInitialOptions').classList.add('hidden'); document.getElementById('onlineHostView').classList.remove('hidden');
@@ -1533,7 +1503,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   function skipTutorial() { hasViewedTutorial = true; document.getElementById('tutorialPromptScreen').classList.add('hidden'); initGame(); }
   function closeTutorial() { document.getElementById('tutorialContentScreen').classList.add('hidden'); initGame(); }
   function hideAllOverlays() { document.querySelectorAll('.screen-overlay').forEach(el => el.classList.add('hidden')); }
-  function showStartScreen() { clearEffects(); document.getElementById('drawOfferScreen').classList.add('hidden'); closeOnlineChat(); clearChatUI(); if(peer) peer.destroy(); peer=null; peerConn=null; gameMode='pvp'; onlineGameEndedByAbandonment=false; setOnlineControlsVisible(false); updateMainMenuVisibility(); hideAllOverlays(); document.getElementById('startScreen').classList.remove('hidden'); }
+  function showStartScreen() { invalidateAIRequest(); clearEffects(); document.getElementById('drawOfferScreen').classList.add('hidden'); closeOnlineChat(); clearChatUI(); if(peer) peer.destroy(); peer=null; peerConn=null; gameMode='pvp'; onlineGameEndedByAbandonment=false; setOnlineControlsVisible(false); updateMainMenuVisibility(); hideAllOverlays(); document.getElementById('startScreen').classList.remove('hidden'); }
 
   function canEat(a, d) { return (a==='scissors'&&d==='paper')||(a==='paper'&&d==='rock')||(a==='rock'&&d==='scissors'); }
   function getCoordNotation(r, c) { return `${COLS[c]}${ROWS[r]}`; }
@@ -1596,6 +1566,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   }
 
   function initGame() {
+    invalidateAIRequest();
     clearEffects();
     board = Array(9).fill(null).map(() => Array(9).fill(null));
     hands = { blue: [], red: [] };
@@ -1605,10 +1576,6 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     moveHistory = []; viewHistoryIndex = -1;
     drawPositionCounts = new Map();
     quietTurnCount = 0;
-    // Fresh per-game seed: opening play can vary while the actual search remains tactical.
-    pveOpeningSeed = (globalThis.crypto && globalThis.crypto.getRandomValues)
-      ? globalThis.crypto.getRandomValues(new Uint32Array(1))[0] >>> 0
-      : ((Date.now() ^ Math.floor(Math.random()*0xffffffff)) >>> 0);
     onlineGameEndedByAbandonment = false;
     closeOnlineChat(); clearChatUI();
     document.getElementById('moveLogList').innerHTML = '';
@@ -1728,7 +1695,13 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     if(!gameOver && gameMode==='pve' && turn!==playerSide) triggerAIMove();
   }
 
-  function triggerAIMove() { if(!gameOver) { const repKey=getDrawPositionKey(); aiWorker.postMessage({board, hands, aiPlayer:turn, moveCount:moveHistory.length, rootRepetitionCount:drawPositionCounts.get(repKey)||1, quietTurnCount, openingSeed:pveOpeningSeed}); } }
+  function triggerAIMove() {
+    if(gameOver || gameMode!=='pve' || turn===playerSide) return;
+    const requestId = ++aiRequestSerial;
+    activeAIRequest = requestId;
+    const repKey=getDrawPositionKey();
+    aiWorker.postMessage({board, hands, aiPlayer:turn, moveCount:moveHistory.length, rootRepetitionCount:drawPositionCounts.get(repKey)||1, quietTurnCount, openingSeed:pveOpeningSeed, requestId});
+  }
   function executeAIAction(a) { applyActionToBoard(a); }
 
   function endDraw(msg) {
@@ -1784,7 +1757,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     const statusEl = document.getElementById('statusBar');
     
     if (isHistory) {
-      // 保持和当前轮次一样的文本信息，仅仅把样式变成黄色高亮提示
+     
       let mt = '';
       if(gameMode==='pve') mt = currentTurn===playerSide?' (Your Turn)':' (AI Thinking...)';
       else if(gameMode==='online') mt = currentTurn===playerSide?' (Your Turn)':' (Opponent Turn)';
