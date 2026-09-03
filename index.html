@@ -4,13 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>SSS - Shear, Sheet, Stone</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✂️</text></svg>">
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; user-select: none; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
     body {
-      background: #0b0e14;
-      color: #c9d1d9;
+      background: #16120d;
+      color: #e9dfd0;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
@@ -27,7 +29,7 @@
       position: absolute;
       width: 700px;
       height: 700px;
-      background: radial-gradient(circle, rgba(58, 130, 246, 0.12) 0%, rgba(11, 14, 20, 0) 70%);
+      background: radial-gradient(circle, rgba(201, 144, 74, 0.14) 0%, rgba(22, 18, 13, 0) 70%);
       top: 50%; left: 50%;
       transform: translate(-50%, -50%);
       pointer-events: none;
@@ -37,7 +39,7 @@
     .start-click-overlay {
       position: fixed;
       top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(11, 14, 20, 0.98);
+      background: rgba(22, 18, 13, 0.98);
       backdrop-filter: blur(25px);
       display: flex;
       flex-direction: column;
@@ -49,13 +51,13 @@
     }
     .start-click-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
     .start-click-text {
-      font-size: clamp(28px, 5vw, 42px);
-      font-weight: 900;
-      color: #58a6ff;
-      letter-spacing: 4px;
-      text-transform: uppercase;
-      text-shadow: 0 0 20px rgba(88, 166, 255, 0.6);
-      animation: pulse 1.6s infinite ease-in-out;
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: clamp(22px, 4.5vw, 32px);
+      font-weight: 600;
+      color: #e3b45c;
+      letter-spacing: 1px;
+      text-shadow: 0 0 24px rgba(227, 179, 65, 0.45);
+      animation: pulse 1.8s infinite ease-in-out;
     }
     @keyframes pulse {
       0%, 100% { opacity: 0.35; transform: scale(0.96); }
@@ -75,44 +77,47 @@
 
     .volume-control {
       display: flex; align-items: center; gap: 10px;
-      background: rgba(22, 27, 34, 0.85);
-      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(38, 31, 24, 0.85);
+      border: 1px solid rgba(244, 228, 202, 0.14);
       padding: 8px 18px; border-radius: 30px;
       backdrop-filter: blur(10px);
       box-shadow: 0 4px 15px rgba(0,0,0,0.4);
     }
-    .volume-icon { font-size: 18px; cursor: pointer; color: #58a6ff; transition: transform 0.2s; }
+    .volume-icon { font-size: 18px; cursor: pointer; color: #e3b45c; transition: transform 0.2s; }
     .volume-icon:hover { transform: scale(1.15); }
-    .volume-slider { -webkit-appearance: none; width: 80px; height: 5px; border-radius: 3px; background: #30363d; outline: none; }
-    .volume-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #58a6ff; cursor: pointer; box-shadow: 0 0 8px #58a6ff; }
-    .track-info { font-size: 12px; color: #8b949e; margin-left: 4px; max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .volume-slider { -webkit-appearance: none; width: 80px; height: 5px; border-radius: 3px; background: #3a2f24; outline: none; }
+    .volume-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #e3b45c; cursor: pointer; box-shadow: 0 0 8px #e3b45c; }
+    .track-info { font-size: 12px; color: #a89a87; margin-left: 4px; max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     .screen-overlay {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(11, 14, 20, 0.94);
+      background: rgba(22, 18, 13, 0.94);
       backdrop-filter: blur(20px);
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       z-index: 100; transition: opacity 0.3s ease, visibility 0.3s; padding: 20px;
     }
 
     .game-title {
-      font-size: clamp(48px, 10vw, 76px); font-weight: 900; letter-spacing: 8px;
-      background: linear-gradient(135deg, #58a6ff 0%, #bc8cff 100%);
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: clamp(46px, 10vw, 72px); font-weight: 600; letter-spacing: 2px;
+      background: linear-gradient(135deg, #e3b45c 0%, #c9762f 100%);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      margin-bottom: 6px; text-align: center; text-shadow: 0 0 40px rgba(88, 166, 255, 0.4);
+      margin-bottom: 8px; text-align: center; text-shadow: 0 0 40px rgba(227, 179, 65, 0.25);
     }
-    .game-subtitle { font-size: clamp(14px, 2.5vw, 18px); color: #8b949e; margin-bottom: 40px; letter-spacing: 6px; text-align: center; text-transform: uppercase; font-weight: 600; }
+    .game-subtitle { font-size: clamp(13px, 2.2vw, 16px); color: #a89a87; margin-bottom: 40px; letter-spacing: 4px; text-align: center; font-weight: 600; }
 
     .btn-group { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 320px; }
 
     .btn {
-      background: rgba(22, 27, 34, 0.85); border: 1px solid rgba(255, 255, 255, 0.18);
-      color: #c9d1d9; padding: 16px 28px; border-radius: 16px; font-size: 16px; font-weight: 700;
+      background: rgba(38, 31, 24, 0.85); border: 1px solid rgba(244, 228, 202, 0.16);
+      color: #e9dfd0; padding: 16px 28px; border-radius: 16px; font-size: 16px; font-weight: 700;
       cursor: pointer; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
       display: flex; align-items: center; justify-content: center; gap: 12px;
       box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+      touch-action: manipulation;
     }
     .btn:hover { transform: translateY(-3px); }
+    .btn:active { transform: translateY(-1px) scale(0.98); }
 
     .btn-pvp { background: linear-gradient(135deg, #1f6beb 0%, #388bfd 100%); border: none; color: #ffffff; box-shadow: 0 6px 20px rgba(31, 107, 235, 0.35); }
     .btn-pvp:hover { background: linear-gradient(135deg, #388bfd 0%, #58a6ff 100%); box-shadow: 0 8px 25px rgba(56, 139, 253, 0.5); }
@@ -120,25 +125,25 @@
     .btn-pve:hover { background: linear-gradient(135deg, #a371f7 0%, #bc8cff 100%); box-shadow: 0 8px 25px rgba(163, 113, 247, 0.5); }
     .btn-online { background: linear-gradient(135deg, #238636 0%, #2ea043 100%); border: none; color: #ffffff; box-shadow: 0 6px 20px rgba(35, 134, 54, 0.35); }
     .btn-online:hover { background: linear-gradient(135deg, #2ea043 0%, #3fb950 100%); box-shadow: 0 8px 25px rgba(46, 160, 67, 0.5); }
-    .btn-primary { background: linear-gradient(135deg, #1f6beb 0%, #388bfd 100%); border: none; color: #fff; }
-    .btn-primary:hover { background: linear-gradient(135deg, #388bfd 0%, #58a6ff 100%); box-shadow: 0 8px 25px rgba(56, 139, 253, 0.45); }
+    .btn-primary { background: linear-gradient(135deg, #c9762f 0%, #e3b45c 100%); border: none; color: #1c1712; }
+    .btn-primary:hover { background: linear-gradient(135deg, #d9862f 0%, #f0c169 100%); box-shadow: 0 8px 25px rgba(227, 179, 65, 0.4); }
     .btn-red { background: linear-gradient(135deg, #da3633 0%, #f85149 100%); border: none; color: #fff; }
     .btn-red:hover { background: linear-gradient(135deg, #f85149 0%, #ff7b72 100%); box-shadow: 0 8px 25px rgba(248, 81, 73, 0.45); }
 
     .modal-box {
-      background: #161b22; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 20px;
+      background: #241d16; border: 1px solid rgba(244, 228, 202, 0.14); border-radius: 20px;
       padding: 32px; max-width: 520px; width: 100%; box-shadow: 0 25px 60px rgba(0,0,0,0.7); text-align: center;
     }
-    .modal-title { font-size: clamp(22px, 3.5vw, 26px); font-weight: 800; color: #f0f6fc; margin-bottom: 18px; }
-    .modal-body { font-size: clamp(15px, 2.2vw, 17px); color: #c9d1d9; line-height: 1.8; text-align: left; margin-bottom: 26px; }
+    .modal-title { font-family: 'Fraunces', Georgia, serif; font-size: clamp(22px, 3.5vw, 27px); font-weight: 600; color: #f7efe0; margin-bottom: 18px; }
+    .modal-body { font-size: clamp(15px, 2.2vw, 17px); color: #e9dfd0; line-height: 1.8; text-align: left; margin-bottom: 26px; }
     .modal-body ul { padding-left: 22px; }
     .modal-body li { margin-bottom: 12px; }
-    .modal-body strong { color: #58a6ff; font-size: 1.05em; }
+    .modal-body strong { color: #e3b45c; font-size: 1.05em; }
 
     .game-layout { display: flex; gap: 16px; align-items: flex-end; justify-content: center; z-index: 1; margin-top: 35px; }
 
     .hand-box {
-      width: 135px; height: 480px; background: rgba(22, 27, 34, 0.6); border: 2px dashed rgba(255, 255, 255, 0.15);
+      width: 135px; height: 480px; background: rgba(38, 31, 24, 0.6); border: 2px dashed rgba(244, 228, 202, 0.16);
       border-radius: 18px; padding: 12px; display: flex; flex-direction: column; gap: 12px; transition: border-color 0.3s;
     }
     .hand-box.active-turn { border-style: solid; }
@@ -146,48 +151,49 @@
     .hand-box.red-hand.active-turn { border-color: #f85149; box-shadow: 0 0 18px rgba(248, 81, 73, 0.25); }
 
     .hand-slot {
-      flex: 1; background: rgba(13, 17, 23, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px;
+      flex: 1; background: rgba(20, 15, 10, 0.7); border: 1px solid rgba(244, 228, 202, 0.1); border-radius: 12px;
       display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; position: relative;
+      touch-action: manipulation;
     }
-    .hand-slot:hover:not(.disabled) { background: rgba(56, 139, 253, 0.15); border-color: #58a6ff; }
-    .hand-slot.selected { border-color: #58a6ff; background: rgba(56, 139, 253, 0.25); box-shadow: 0 0 14px rgba(88, 166, 255, 0.4); }
+    .hand-slot:hover:not(.disabled) { background: rgba(227, 179, 65, 0.14); border-color: #e3b45c; }
+    .hand-slot.selected { border-color: #e3b45c; background: rgba(227, 179, 65, 0.22); box-shadow: 0 0 14px rgba(227, 179, 65, 0.4); }
     .hand-slot.disabled { opacity: 0.3; cursor: not-allowed; }
-    .hand-badge { position: absolute; top: 6px; right: 8px; font-size: 12px; font-weight: bold; color: #8b949e; }
+    .hand-badge { position: absolute; top: 6px; right: 8px; font-size: 12px; font-weight: bold; color: #a89a87; }
     .hand-icon { font-size: 26px; }
 
-    .board-container { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-    .status-bar-wrapper { display: flex; align-items: center; gap: 12px; }
-    .status-badge { padding: 8px 20px; border-radius: 24px; background: rgba(22, 27, 34, 0.8); border: 1px solid rgba(255, 255, 255, 0.12); font-size: 14px; font-weight: 700; letter-spacing: 0.5px; transition: all 0.2s; }
+    .board-container { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .status-bar-wrapper { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+    .status-badge { padding: 8px 20px; border-radius: 24px; background: rgba(38, 31, 24, 0.8); border: 1px solid rgba(244, 228, 202, 0.14); font-size: 14px; font-weight: 700; letter-spacing: 0.5px; transition: all 0.2s; }
     
     .status-badge.history-mode { background: #3a2e05 !important; border-color: #d29922 !important; color: #d29922 !important; }
 
-    .btn-flip { padding: 8px 16px; border-radius: 24px; font-size: 13px; font-weight: 700; background: rgba(22, 27, 34, 0.85); border: 1px solid rgba(255, 255, 255, 0.18); color: #c9d1d9; cursor: pointer; transition: all 0.2s ease; }
-    .btn-flip:hover { background: rgba(56, 139, 253, 0.18); border-color: #58a6ff; color: #ffffff; }
+    .btn-flip { padding: 8px 16px; border-radius: 24px; font-size: 13px; font-weight: 700; background: rgba(38, 31, 24, 0.85); border: 1px solid rgba(244, 228, 202, 0.16); color: #e9dfd0; cursor: pointer; transition: all 0.2s ease; touch-action: manipulation; }
+    .btn-flip:hover { background: rgba(227, 179, 65, 0.16); border-color: #e3b45c; color: #ffffff; }
 
     .board-wrapper {
       display: grid; grid-template-columns: 24px 1fr 24px; grid-template-rows: 24px 1fr 24px;
-      align-items: center; justify-items: center; background: rgba(22, 27, 34, 0.4); padding: 6px; border-radius: 18px; border: 1px solid rgba(255, 255, 255, 0.12); height: 480px;
+      align-items: center; justify-items: center; background: rgba(38, 31, 24, 0.4); padding: 6px; border-radius: 18px; border: 1px solid rgba(244, 228, 202, 0.14); height: 480px;
     }
 
-    .coord-col, .coord-row { display: flex; color: #8b949e; font-size: 12px; font-weight: 700; }
+    .coord-col, .coord-row { display: flex; color: #a89a87; font-size: 12px; font-weight: 700; }
     .coord-col { width: 100%; justify-content: space-around; }
     .coord-row { height: 100%; flex-direction: column; justify-content: space-around; }
 
     .board {
       display: grid; grid-template-columns: repeat(9, 44px); grid-template-rows: repeat(9, 44px); gap: 2px;
-      background: rgba(255, 255, 255, 0.08); padding: 6px; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 12px;
+      background: rgba(244, 228, 202, 0.08); padding: 6px; border: 1px solid rgba(244, 228, 202, 0.16); border-radius: 12px;
       box-shadow: 0 16px 40px rgba(0,0,0,0.7), inset 0 0 15px rgba(255,255,255,0.02); transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .board.flipped { transform: rotate(180deg); }
     .board.flipped .piece { transform: rotate(180deg); }
     .board.flipped .piece:hover { transform: rotate(180deg) scale(1.08); }
 
-    .cell { width: 44px; height: 44px; background: #12171f; border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 4px; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; transition: background 0.15s, border-color 0.15s; }
-    .cell:hover { background: #1c232e; border-color: rgba(255, 255, 255, 0.2); }
-    .cell.blue-zone { background: #131d2e; }
-    .cell.red-zone { background: #24171a; }
-    .cell.blue-zone:hover { background: #1a273d; }
-    .cell.red-zone:hover { background: #301f23; }
+    .cell { width: 44px; height: 44px; background: #1c1712; border: 1px solid rgba(244, 228, 202, 0.06); border-radius: 4px; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; transition: background 0.15s, border-color 0.15s; touch-action: manipulation; }
+    .cell:hover { background: #26201a; border-color: rgba(244, 228, 202, 0.22); }
+    .cell.blue-zone { background: #1a2030; }
+    .cell.red-zone { background: #291a1c; }
+    .cell.blue-zone:hover { background: #212a3d; }
+    .cell.red-zone:hover { background: #362225; }
     .cell.selected { background: #3a2e05 !important; border: 2px solid #d29922 !important; }
     .cell.highlight-move { background: #0d381e !important; border: 2px solid #2da44e !important; }
     .cell.highlight-drop { background: #092c5c !important; border: 2px solid #388bfd !important; }
@@ -198,19 +204,19 @@
     .piece.blue { background: radial-gradient(circle at 30% 30%, #388bfd, #1f6beb); border: 1px solid #58a6ff; box-shadow: 0 0 10px rgba(56, 139, 253, 0.4); }
     .piece.red { background: radial-gradient(circle at 30% 30%, #f85149, #da3633); border: 1px solid #ff7b72; box-shadow: 0 0 10px rgba(248, 81, 73, 0.4); }
 
-    .log-box { width: 185px; height: 480px; background: rgba(22, 27, 34, 0.6); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 18px; padding: 12px; display: flex; flex-direction: column; }
-    .log-header { font-size: 13px; font-weight: 700; color: #8b949e; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; text-align: center; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 6px; }
+    .log-box { width: 185px; height: 480px; background: rgba(38, 31, 24, 0.6); border: 1px solid rgba(244, 228, 202, 0.14); border-radius: 18px; padding: 12px; display: flex; flex-direction: column; }
+    .log-header { font-size: 13px; font-weight: 700; color: #a89a87; margin-bottom: 10px; letter-spacing: 1px; text-align: center; border-bottom: 1px solid rgba(244, 228, 202, 0.12); padding-bottom: 6px; }
     .log-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12px; padding-right: 4px; }
     .log-list::-webkit-scrollbar { width: 4px; }
-    .log-list::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
-    .log-item { background: rgba(13, 17, 23, 0.6); padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05); color: #c9d1d9; display: flex; align-items: center; justify-content: space-between; transition: all 0.2s; }
-    .log-item:hover { background: rgba(56, 139, 253, 0.15); border-color: #58a6ff; }
+    .log-list::-webkit-scrollbar-thumb { background: #3a2f24; border-radius: 4px; }
+    .log-item { background: rgba(20, 15, 10, 0.6); padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(244, 228, 202, 0.06); color: #e9dfd0; display: flex; align-items: center; justify-content: space-between; transition: all 0.2s; }
+    .log-item:hover { background: rgba(227, 179, 65, 0.14); border-color: #e3b45c; }
     .log-item.active-history { background: #3a2e05; border-color: #d29922; }
     .log-item.blue { border-left: 3px solid #388bfd; }
     .log-item.red { border-left: 3px solid #f85149; }
 
-    .input-field { width: 100%; background: #0d1117; border: 1px solid rgba(255, 255, 255, 0.2); color: #f0f6fc; padding: 12px 16px; border-radius: 12px; font-size: 16px; text-align: center; letter-spacing: 2px; outline: none; margin-bottom: 16px; }
-    .input-field:focus { border-color: #58a6ff; box-shadow: 0 0 10px rgba(88, 166, 255, 0.3); }
+    .input-field { width: 100%; background: #140f0a; border: 1px solid rgba(244, 228, 202, 0.2); color: #f7efe0; padding: 12px 16px; border-radius: 12px; font-size: 16px; text-align: center; letter-spacing: 2px; outline: none; margin-bottom: 16px; }
+    .input-field:focus { border-color: #e3b45c; box-shadow: 0 0 10px rgba(227, 179, 65, 0.3); }
 
     .effects-layer { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 150; overflow: hidden; }
     .confetti { position: absolute; width: 10px; height: 10px; top: -10px; animation: confettiFall linear infinite; }
@@ -218,40 +224,37 @@
     .cry-emoji { position: absolute; font-size: 32px; top: -40px; animation: cryFall linear infinite; }
     @keyframes cryFall { 0% { transform: translateY(0) scale(0.8); opacity: 0.9; } 100% { transform: translateY(105vh) scale(1.2); opacity: 0.1; } }
 
-    
-      .online-game-controls {
-        display: none;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-        justify-content: center;
-        position: static; 
-      }
-
-      
-      @media (max-width: 768px) {
-        .online-game-controls {
-          position: absolute;
-          top: 10px;
-          right: 10px;
-          z-index: 100;
-          width: auto;
-          justify-content: flex-end;
-          margin-bottom: 0;
-        }
-      }
+    /* Online game controls: a normal in-flow row (no absolute positioning),
+       so it never overlaps other UI and always receives taps reliably on mobile. */
+    .online-game-controls {
+      display: none;
+      align-items: stretch;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+      max-width: 460px;
+    }
     .online-game-controls.visible { display: flex; }
-    .btn-resign {
-      background: rgba(218, 54, 51, 0.12);
-      border: 1px solid rgba(248, 81, 73, 0.45);
-      color: #ff7b72;
-      padding: 7px 13px;
+    .btn-resign, .btn-draw, .online-chat-toggle {
+      flex: 1 1 120px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 42px;
       border-radius: 24px;
       font-size: 13px;
       font-weight: 750;
       cursor: pointer;
       transition: all 0.2s ease;
       white-space: nowrap;
+      touch-action: manipulation;
+    }
+    .btn-resign {
+      background: rgba(218, 54, 51, 0.12);
+      border: 1px solid rgba(248, 81, 73, 0.45);
+      color: #ff7b72;
     }
     .btn-resign:hover {
       background: rgba(248, 81, 73, 0.18);
@@ -260,19 +263,12 @@
       transform: translateY(-1px);
     }
     .btn-draw {
-      background: rgba(210, 153, 34, 0.12);
-      border: 1px solid rgba(210, 153, 34, 0.45);
-      color: #d29922;
-      padding: 7px 13px;
-      border-radius: 24px;
-      font-size: 13px;
-      font-weight: 750;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      white-space: nowrap;
+      background: rgba(210, 153, 34, 0.14);
+      border: 1px solid rgba(210, 153, 34, 0.5);
+      color: #e3b45c;
     }
     .btn-draw:hover {
-      background: rgba(210, 153, 34, 0.18);
+      background: rgba(210, 153, 34, 0.22);
       border-color: #d29922;
       color: #fff;
       transform: translateY(-1px);
@@ -281,29 +277,19 @@
     .online-chat-toggle {
       display: none;
       position: relative;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      padding: 7px 12px;
-      border-radius: 24px;
-      font-size: 13px;
-      font-weight: 750;
-      background: rgba(22, 27, 34, 0.88);
-      border: 1px solid rgba(255,255,255,0.18);
-      color: #c9d1d9;
-      cursor: pointer;
-      transition: all .2s ease;
-      white-space: nowrap;
+      background: rgba(38, 31, 24, 0.88);
+      border: 1px solid rgba(244, 228, 202, 0.18);
+      color: #e9dfd0;
     }
     .online-chat-toggle.visible { display: inline-flex; }
-    .online-chat-toggle:hover { background: rgba(56, 139, 253, 0.18); border-color: #58a6ff; color: #fff; transform: translateY(-1px); }
+    .online-chat-toggle:hover { background: rgba(227, 179, 65, 0.16); border-color: #e3b45c; color: #fff; transform: translateY(-1px); }
     .chat-unread-dot {
       position: absolute;
       width: 9px; height: 9px;
       top: -2px; right: -1px;
       border-radius: 50%;
       background: #f85149;
-      box-shadow: 0 0 0 2px #161b22, 0 0 10px rgba(248,81,73,.75);
+      box-shadow: 0 0 0 2px #241d16, 0 0 10px rgba(248,81,73,.75);
       display: none;
     }
     .chat-unread-dot.visible { display: block; }
@@ -314,8 +300,8 @@
       height: min(520px, calc(100vh - 110px));
       display: none;
       flex-direction: column;
-      background: rgba(22, 27, 34, 0.97);
-      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(36, 29, 22, 0.97);
+      border: 1px solid rgba(244, 228, 202, 0.16);
       border-radius: 18px;
       box-shadow: 0 20px 55px rgba(0,0,0,.65);
       backdrop-filter: blur(16px);
@@ -326,13 +312,15 @@
     .chat-header {
       display: flex; align-items: center; justify-content: space-between;
       gap: 10px; padding: 12px 14px;
-      border-bottom: 1px solid rgba(255,255,255,.1);
-      font-size: 13px; font-weight: 800; color: #f0f6fc;
-      text-transform: uppercase; letter-spacing: 1px;
+      border-bottom: 1px solid rgba(244, 228, 202, 0.1);
+      font-size: 13px; font-weight: 800; color: #f7efe0;
+      letter-spacing: 0.5px;
     }
     .chat-close {
-      border: 0; background: transparent; color: #8b949e;
-      font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px;
+      border: 0; background: transparent; color: #a89a87;
+      font-size: 22px; line-height: 1; cursor: pointer; padding: 6px;
+      min-width: 36px; min-height: 36px; display: flex; align-items: center; justify-content: center;
+      touch-action: manipulation;
     }
     .chat-close:hover { color: #fff; }
     .chat-list {
@@ -340,28 +328,28 @@
       padding: 12px; display: flex; flex-direction: column; gap: 8px;
     }
     .chat-list::-webkit-scrollbar { width: 4px; }
-    .chat-list::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
-    .chat-empty { color: #8b949e; font-size: 12px; text-align: center; padding: 18px 8px; }
+    .chat-list::-webkit-scrollbar-thumb { background: #3a2f24; border-radius: 4px; }
+    .chat-empty { color: #a89a87; font-size: 12px; text-align: center; padding: 18px 8px; }
     .chat-message {
       max-width: 86%; padding: 8px 10px; border-radius: 12px;
       font-size: 13px; line-height: 1.45; word-break: break-word;
-      border: 1px solid rgba(255,255,255,.06);
+      border: 1px solid rgba(244, 228, 202, 0.06);
     }
     .chat-message.mine { align-self: flex-end; background: rgba(56, 139, 253, .18); border-color: rgba(88,166,255,.28); }
-    .chat-message.theirs { align-self: flex-start; background: rgba(13, 17, 23, .82); }
-    .chat-message-meta { display: block; margin-bottom: 3px; font-size: 10px; color: #8b949e; font-weight: 700; }
-    .chat-compose { display: flex; gap: 8px; padding: 10px; border-top: 1px solid rgba(255,255,255,.1); }
+    .chat-message.theirs { align-self: flex-start; background: rgba(20, 15, 10, .82); }
+    .chat-message-meta { display: block; margin-bottom: 3px; font-size: 10px; color: #a89a87; font-weight: 700; }
+    .chat-compose { display: flex; gap: 8px; padding: 10px; border-top: 1px solid rgba(244, 228, 202, 0.1); }
     .chat-input {
-      flex: 1; min-width: 0; background: #0d1117; color: #f0f6fc;
-      border: 1px solid rgba(255,255,255,.18); border-radius: 11px;
-      padding: 10px 12px; font-size: 14px; outline: none;
+      flex: 1; min-width: 0; background: #140f0a; color: #f7efe0;
+      border: 1px solid rgba(244, 228, 202, 0.2); border-radius: 11px;
+      padding: 10px 12px; font-size: 16px; outline: none;
       user-select: text;
     }
-    .chat-input:focus { border-color: #58a6ff; box-shadow: 0 0 10px rgba(88,166,255,.22); }
+    .chat-input:focus { border-color: #e3b45c; box-shadow: 0 0 10px rgba(227,179,65,.22); }
     .chat-send {
-      flex: 0 0 auto; border: 0; border-radius: 11px; padding: 0 14px;
-      background: linear-gradient(135deg, #1f6beb 0%, #388bfd 100%);
-      color: #fff; font-weight: 800; cursor: pointer;
+      flex: 0 0 auto; border: 0; border-radius: 11px; padding: 0 16px; min-height: 42px;
+      background: linear-gradient(135deg, #c9762f 0%, #e3b45c 100%);
+      color: #1c1712; font-weight: 800; cursor: pointer; touch-action: manipulation;
     }
     .chat-send:hover { filter: brightness(1.08); }
 
@@ -374,9 +362,9 @@
       max-width: min(420px, calc(100vw - 32px));
       padding: 11px 17px;
       border-radius: 13px;
-      background: rgba(22, 27, 34, 0.96);
-      border: 1px solid rgba(255,255,255,0.16);
-      color: #f0f6fc;
+      background: rgba(36, 29, 22, 0.96);
+      border: 1px solid rgba(244, 228, 202, 0.18);
+      color: #f7efe0;
       box-shadow: 0 12px 35px rgba(0,0,0,0.55);
       backdrop-filter: blur(12px);
       font-size: 14px;
@@ -404,17 +392,23 @@
       .status-bar-wrapper { width: 100%; justify-content: center; gap: 7px; }
       .status-badge { padding: 7px 12px; font-size: 12px; max-width: calc(100vw - 132px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .btn-flip { padding: 7px 10px; font-size: 12px; }
-      .online-game-controls { width: auto; justify-content: center; margin-bottom: 0; }
-      .btn-resign, .btn-draw { padding: 7px 10px; font-size: 12px; }
+      /* Resign / Offer Draw / Chat: full-width row, in normal document flow,
+         each button a large, evenly-sized tap target — this is what fixes the
+         "buttons don't work on mobile" issue (they used to float, absolutely
+         positioned, on top of other elements and were too small to tap reliably). */
+      .online-game-controls { width: 100%; max-width: calc(100vw - 40px); justify-content: center; margin: 0 auto; }
+      .btn-resign, .btn-draw, .online-chat-toggle { flex: 1 1 30%; padding: 11px 10px; font-size: 13px; min-height: 46px; }
       #onlineMenuScreen .modal-box { width: min(100%, 520px); max-height: calc(100vh - 28px); overflow-y: auto; padding: 20px 14px; }
       #onlineMenuScreen .btn { min-width: 0; padding: clamp(11px, 3vw, 16px) clamp(12px, 5vw, 28px); font-size: clamp(13px, 3.5vw, 16px); }
       #onlineMenuScreen .btn-group { max-width: min(100%, 360px); }
-      .online-chat-toggle { padding: 7px 10px; font-size: 12px; }
       .chat-panel { top: 70px; left: 10px; right: 10px; width: auto; height: min(58vh, 520px); max-height: calc(100vh - 82px); border-radius: 16px; }
       .chat-compose { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
       .chat-input { font-size: 16px; }
       .modal-box { padding: 22px 18px; }
       .toast { bottom: 18px; font-size: 13px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
     }
   </style>
 </head>
@@ -425,15 +419,15 @@
   <audio id="bgmAudio" loop></audio>
 
   <div class="start-click-overlay" id="clickToStartOverlay" onclick="handleFirstUserClick()">
-    <div class="start-click-text">CLICK ANYWHERE TO START</div>
+    <div class="start-click-text">Tap anywhere to begin</div>
   </div>
 
   <div class="screen-overlay hidden" id="drawOfferScreen" style="z-index: 2100;">
     <div class="modal-box" style="max-width: 380px; padding: 28px;">
-      <div class="modal-title" style="font-size: 22px; color: #d29922;">Draw Offered</div>
-      <div class="modal-body" style="text-align: center; margin-bottom: 24px; font-weight: bold;">Your opponent has offered a draw.</div>
+      <div class="modal-title" style="font-size: 22px; color: #e3b45c;">Draw Offered</div>
+      <div class="modal-body" style="text-align: center; margin-bottom: 24px; font-weight: bold;">Your opponent is offering a draw. Would you like to accept?</div>
       <div class="btn-group" style="max-width:100%; flex-direction:row;">
-        <button class="btn btn-primary" style="flex:1;" onclick="respondToDraw(true)">Accept</button>
+        <button class="btn btn-primary" style="flex:1;" onclick="respondToDraw(true)">🤝 Accept</button>
         <button class="btn" style="flex:1;" onclick="respondToDraw(false)">Decline</button>
       </div>
     </div>
@@ -441,7 +435,7 @@
 
   <div class="screen-overlay hidden" id="customAlertScreen" style="z-index: 2000;">
     <div class="modal-box" style="max-width: 380px; padding: 28px;">
-      <div class="modal-title" style="font-size: 22px; color: #58a6ff;" id="customAlertTitle">Notice</div>
+      <div class="modal-title" style="font-size: 22px; color: #e3b45c;" id="customAlertTitle">Notice</div>
       <div class="modal-body" style="text-align: center; margin-bottom: 24px; font-weight: bold;" id="customAlertMsg"></div>
       <button class="btn btn-primary" style="width: 100%;" onclick="closeCustomAlert()">OK</button>
     </div>
@@ -460,10 +454,10 @@
 
   <div class="screen-overlay" id="startScreen">
     <div class="game-title">SSS</div>
-    <div class="game-subtitle">SHEAR, SHEET, STONE</div>
+    <div class="game-subtitle">Shear · Sheet · Stone</div>
     <div class="btn-group">
-      <button class="btn btn-pvp" onclick="selectMode('pvp')">👥 PVP</button>
-      <button class="btn btn-pve" onclick="selectMode('pve')">🤖 PVE</button>
+      <button class="btn btn-pvp" onclick="selectMode('pvp')">👥 Local Two-Player</button>
+      <button class="btn btn-pve" onclick="selectMode('pve')">🤖 vs. Computer</button>
       <button class="btn btn-online" onclick="showOnlineMenu()">🌐 Play Online</button>
     </div>
   </div>
@@ -472,20 +466,20 @@
     <div class="modal-box">
       <div class="modal-title">Play Online</div>
       <div id="onlineInitialOptions">
-        <p style="color:#8b949e; margin-bottom: 22px; font-size: 14px;">Choose whether to create a room or join a friend.</p>
+        <p style="color:#a89a87; margin-bottom: 22px; font-size: 14px;">Start a room for a friend to join, or drop in on one they've already made.</p>
         <button class="btn btn-primary" style="width: 100%; margin-bottom: 12px;" onclick="showCreateRoomUI()">✨ Create Room</button>
         <button class="btn" style="width: 100%; margin-bottom: 12px;" onclick="showJoinRoomInput()">🔑 Join Room</button>
         <button class="btn" style="width: 100%; font-size: 14px; margin-top: 8px;" onclick="showStartScreen()">Cancel</button>
       </div>
       <div id="onlineHostView" class="hidden">
-        <p style="color:#c9d1d9; font-weight: 600; margin-bottom: 10px;">Share this Room Code with your opponent:</p>
+        <p style="color:#e9dfd0; font-weight: 600; margin-bottom: 10px;">Share this room code with your opponent:</p>
         <input type="text" id="roomCodeDisplay" class="input-field" readonly onclick="this.select()">
         <button class="btn btn-primary" style="width: 100%; margin-bottom: 12px;" onclick="copyRoomCode()">📋 Copy Room Code</button>
-        <p style="color:#8b949e; font-size: 13px; animation: pulse 1.5s infinite; margin-bottom: 18px;">Waiting for opponent to connect...</p>
+        <p style="color:#a89a87; font-size: 13px; animation: pulse 1.5s infinite; margin-bottom: 18px;">Waiting for your opponent to connect...</p>
         <button class="btn" style="width: 100%; font-size: 14px;" onclick="backToOnlineOptions()">⬅️ Back</button>
       </div>
       <div id="onlineJoinView" class="hidden">
-        <p style="color:#c9d1d9; font-weight: 600; margin-bottom: 10px;">Enter Room Code:</p>
+        <p style="color:#e9dfd0; font-weight: 600; margin-bottom: 10px;">Enter your friend's room code:</p>
         <input type="text" id="roomCodeInput" class="input-field" placeholder="ENTER CODE HERE">
         <button class="btn btn-primary" style="width: 100%; margin-bottom: 12px;" onclick="joinOnlineRoom()">⚡ Connect Game</button>
         <button class="btn" style="width: 100%; font-size: 14px;" onclick="backToOnlineOptions()">⬅️ Back</button>
@@ -495,8 +489,8 @@
 
   <div class="screen-overlay hidden" id="sideSelectScreen">
     <div class="modal-box">
-      <div class="modal-title">Select Your Faction</div>
-      <p style="color:#8b949e; margin-bottom: 20px; font-size: 15px;">Blue moves first. Red plays second as defender.</p>
+      <div class="modal-title">Choose Your Side</div>
+      <p style="color:#a89a87; margin-bottom: 20px; font-size: 15px;">Blue moves first. Red plays second and defends.</p>
       <div class="btn-group" style="max-width: 100%; flex-direction: row;">
         <button class="btn btn-primary" style="flex: 1;" onclick="chooseSide('blue')">🔵 Blue (1st)</button>
         <button class="btn btn-red" style="flex: 1;" onclick="chooseSide('red')">🔴 Red (2nd)</button>
@@ -506,28 +500,28 @@
 
   <div class="screen-overlay hidden" id="tutorialPromptScreen">
     <div class="modal-box">
-      <div class="modal-title">View Tutorial?</div>
-      <p style="color:#8b949e; margin-bottom: 24px; font-size: 15px;">First time playing? Learn the breakthrough and drop rules.</p>
+      <div class="modal-title">New Here?</div>
+      <p style="color:#a89a87; margin-bottom: 24px; font-size: 15px;">A quick two-minute rundown of how pieces move, capture, and win.</p>
       <div class="btn-group" style="max-width: 100%; flex-direction: row;">
-        <button class="btn btn-primary" style="flex: 1;" onclick="startTutorial()">Tutorial</button>
-        <button class="btn" style="flex: 1;" onclick="skipTutorial()">Play Game</button>
+        <button class="btn btn-primary" style="flex: 1;" onclick="startTutorial()">Show Me</button>
+        <button class="btn" style="flex: 1;" onclick="skipTutorial()">Skip, I Know It</button>
       </div>
     </div>
   </div>
 
   <div class="screen-overlay hidden" id="tutorialContentScreen">
     <div class="modal-box">
-      <div class="modal-title">Rules & How to Play</div>
+      <div class="modal-title">How to Play</div>
       <div class="modal-body">
         <ul>
-          <li><strong>Victory:</strong> Reach the opponent's 1st row (baseline) with any piece, or trap them with no legal moves!</li>
-          <li><strong>Movement:</strong> Move 1 step in any direction. Jump over <b>1 friendly piece</b> in front/diagonal <b>or</b> Place a piece from your reserve hand.</li>
-          <li><strong>Capturing:</strong> Capture opponent pieces following classic Rock-Paper-Scissors rules.</li>
-          <li><strong>Re-entry:</strong> Captured pieces go into your reserve hand to drop back onto your starting 4 rows!</li>
-          <li><strong>Draw:</strong> The game is drawn after threefold repetition or 50 consecutive full moves without a capture or reserve drop.</li>
+          <li><strong>Win the game</strong> by walking any piece onto the opponent's home row, or by leaving them with no legal moves.</li>
+          <li><strong>Moving:</strong> step one square in any direction, jump over one of your own pieces in front or diagonally, or place a piece from your reserve hand onto the board.</li>
+          <li><strong>Capturing</strong> follows classic Rock–Paper–Scissors: each piece beats one type and loses to another.</li>
+          <li><strong>Captured pieces</strong> join your reserve hand — you can drop them back in on your own four rows.</li>
+          <li><strong>Draws</strong> happen after threefold repetition, or 50 moves in a row with no capture or drop.</li>
         </ul>
       </div>
-      <button class="btn btn-primary" style="width: 100%; font-size: 17px; padding: 14px;" onclick="closeTutorial()">Got it, let's play!</button>
+      <button class="btn btn-primary" style="width: 100%; font-size: 17px; padding: 14px;" onclick="closeTutorial()">Got it, let's play</button>
     </div>
   </div>
 
@@ -535,7 +529,7 @@
     <div class="modal-box">
       <div style="font-size: 50px; margin-bottom: 10px;" id="gameOverIcon">🏆</div>
       <div class="modal-title" id="gameOverTitle">Game Over</div>
-      <p style="color:#8b949e; margin-bottom: 24px; font-size: 16px; font-weight: 600;" id="gameOverMsg"></p>
+      <p style="color:#a89a87; margin-bottom: 24px; font-size: 16px; font-weight: 600;" id="gameOverMsg"></p>
       <div class="btn-group" style="max-width: 100%;">
         <button class="btn btn-primary" style="width: 100%;" onclick="restartGame()">🔄 Play Again</button>
         <button class="btn" style="width: 100%;" onclick="showStartScreen()">🏠 Back to Main Menu</button>
@@ -549,7 +543,7 @@
       <button class="chat-close" onclick="toggleOnlineChat(false)" aria-label="Close chat">✕</button>
     </div>
     <div class="chat-list" id="chatList">
-      <div class="chat-empty" id="chatEmpty">No messages yet.</div>
+      <div class="chat-empty" id="chatEmpty">Say hello 👋</div>
     </div>
     <div class="chat-compose">
       <input class="chat-input" id="chatInput" type="text" maxlength="240" autocomplete="off" placeholder="Type a message...">
@@ -578,12 +572,14 @@
       <div class="status-bar-wrapper">
         <div class="status-badge" id="statusBar">Waiting to Start</div>
         <button class="btn-flip" onclick="toggleBoardFlip()">🔄 Flip Board</button>
-        <div class="online-game-controls" id="onlineGameControls">
-          <button class="btn-resign" onclick="resignCurrentGame()">Resign</button>
-          <button class="btn-draw" id="offerDrawBtn" onclick="offerDraw()" style="display:none;">Offer Draw</button>
-          <button class="online-chat-toggle" id="onlineChatToggle" onclick="toggleOnlineChat()">💬 Chat<span class="chat-unread-dot" id="chatUnreadDot"></span></button>
-        </div>
         <button class="btn" id="mainMenuButton" style="padding: 6px 14px; font-size: 13px;" onclick="showStartScreen()">Main Menu</button>
+      </div>
+      <!-- Its own full-width row (not absolutely positioned) so it always sits
+           in normal flow and every button stays reachable and tappable on mobile. -->
+      <div class="online-game-controls" id="onlineGameControls">
+        <button class="btn-resign" onclick="resignCurrentGame()">🏳️ Resign</button>
+        <button class="btn-draw" id="offerDrawBtn" onclick="offerDraw()" style="display:none;">🤝 Offer Draw</button>
+        <button class="online-chat-toggle" id="onlineChatToggle" onclick="toggleOnlineChat()">💬 Chat<span class="chat-unread-dot" id="chatUnreadDot"></span></button>
       </div>
       <div class="board-wrapper">
         <div></div><div class="coord-col" id="coordTop"></div><div></div>
@@ -1276,7 +1272,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   function clearChatUI() {
     const list=document.getElementById('chatList');
     if(!list) return;
-    list.innerHTML='<div class="chat-empty" id="chatEmpty">No messages yet.</div>';
+    list.innerHTML='<div class="chat-empty" id="chatEmpty">Say hello 👋</div>';
   }
 
   function closeOnlineChat() {
@@ -1769,7 +1765,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     } else {
       statusEl.classList.remove('history-mode');
       statusEl.onclick = null;
-      if(gameOver) { statusEl.textContent = 'Game Ended'; statusEl.style.color = '#c9d1d9'; }
+      if(gameOver) { statusEl.textContent = 'Game Ended'; statusEl.style.color = '#e9dfd0'; }
       else {
         let mt = '';
         if(gameMode==='pve') mt = turn===playerSide?' (Your Turn)':' (AI Thinking...)';
