@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>SSS - Shear, Sheet, Stone</title>
-  <link rel="icon" type="image/svg+xml" sizes="any" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✂️</text></svg>">
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -457,8 +456,8 @@
     <div class="game-title">SSS</div>
     <div class="game-subtitle">Shear · Sheet · Stone</div>
     <div class="btn-group">
-      <button class="btn btn-pvp" onclick="selectMode('pvp')">👥 Local Two-Player</button>
-      <button class="btn btn-pve" onclick="selectMode('pve')">🤖 vs. Computer</button>
+      <button class="btn btn-pvp" onclick="selectMode('pvp')">👥 Local PVP</button>
+      <button class="btn btn-pve" onclick="selectMode('pve')">🤖 PVE</button>
       <button class="btn btn-online" onclick="showOnlineMenu()">🌐 Play Online</button>
     </div>
   </div>
@@ -544,7 +543,6 @@
       <button class="chat-close" onclick="toggleOnlineChat(false)" aria-label="Close chat">✕</button>
     </div>
     <div class="chat-list" id="chatList">
-      <div class="chat-empty" id="chatEmpty">Say hello 👋</div>
     </div>
     <div class="chat-compose">
       <input class="chat-input" id="chatInput" type="text" maxlength="240" autocomplete="off" placeholder="Type a message...">
@@ -575,8 +573,6 @@
         <button class="btn-flip" onclick="toggleBoardFlip()">🔄 Flip Board</button>
         <button class="btn" id="mainMenuButton" style="padding: 6px 14px; font-size: 13px;" onclick="showStartScreen()">Main Menu</button>
       </div>
-      <!-- Its own full-width row (not absolutely positioned) so it always sits
-           in normal flow and every button stays reachable and tappable on mobile. -->
       <div class="online-game-controls" id="onlineGameControls">
         <button class="btn-resign" onclick="resignCurrentGame()">🏳️ Resign</button>
         <button class="btn-draw" id="offerDrawBtn" onclick="offerDraw()" style="display:none;">🤝 Offer Draw</button>
@@ -628,6 +624,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   // breakthrough victory, no-move victory, threefold repetition and 50-move draw.
   const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
   const TYPES = ['rock','paper','scissors'];
+  const CAPTURE_VICTIM_VAL = [760,820,790]; // matches scoreMove's MVV-LVA victim values; shared with qsearch delta pruning
   const TIDX = {rock:0,paper:1,scissors:2};
   const EMPTY = 0;
   const MATE = 9000000;
@@ -819,7 +816,8 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     let ownMob=0,enemyMob=0,ownAtk=0,enemyAtk=0,ownDef=0,enemyDef=0;
     let ownPieces=0,enemyPieces=0,ownIsol=0,enemyIsol=0,ownAdvanced=0,enemyAdvanced=0;
     let ownCenter=0,enemyCenter=0,ownRace=0,enemyRace=0,ownDrop=0,enemyDrop=0;
-    const ownFront=99,enemyFront=99;
+    let ownFront=9,enemyFront=9;
+    const ownByType=[0,0,0],enemyByType=[0,0,0];
     for(let r=0;r<9;r++)for(let c=0;c<9;c++){
       const code=st.b[idx(r,c)];if(!code)continue;const q=pOf(code),t=tOf(code),own=q===p,fd=forwardDist(r,q),progress=8-fd;
       let val=320+progress*120+PST[q==='blue'?r:8-r][c]*16;
@@ -841,14 +839,18 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
       if(c===4)val+=36;
       if(q===p){
         ownPieces++;ownMob+=mobility;ownAtk+=attacks;ownDef+=defense;ownCenter+=4-Math.abs(c-4);if(isolated)ownIsol++;if(fd<=2)ownAdvanced++;ownRace+=Math.max(0,18-fd*3)+attacks*3;
+        if(fd<ownFront)ownFront=fd;
+        ownByType[t]++;
         score+=val;
       }else{
         enemyPieces++;enemyMob+=mobility;enemyAtk+=attacks;enemyDef+=defense;enemyCenter+=4-Math.abs(c-4);if(isolated)enemyIsol++;if(fd<=2)enemyAdvanced++;enemyRace+=Math.max(0,18-fd*3)+attacks*3;
+        if(fd<enemyFront)enemyFront=fd;
+        enemyByType[t]++;
         score-=val;
       }
     }
     const base=p==='blue'?0:3,eb=enemy==='blue'?0:3;let pHand=0,eHand=0;
-    for(let t=0;t<3;t++){const ph=st.h[base+t],eh=st.h[eb+t];pHand+=ph;eHand+=eh;score+=(ph-eh)*(300+t*30);}
+    for(let t=0;t<3;t++){const ph=st.h[base+t],eh=st.h[eb+t];pHand+=ph;eHand+=eh;score+=(ph-eh)*300;}
     score+=(pHand-eHand)*160;
 
     const orows=p==='blue'?[5,6,7,8]:[0,1,2,3],erows=enemy==='blue'?[5,6,7,8]:[0,1,2,3];
@@ -856,7 +858,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     score+=(ownDrop-enemyDrop)*14;
     score+=(ownMob-enemyMob)*19+(ownAtk-enemyAtk)*42+(ownDef-enemyDef)*27;
     score+=(enemyIsol-ownIsol)*35+(enemyAdvanced-ownAdvanced)*-10+(ownCenter-enemyCenter)*12;
-    if(ownPieces)score+=(9-findFront(st,p))*175;if(enemyPieces)score-=(9-findFront(st,enemy))*175;
+    if(ownPieces)score+=(9-ownFront)*175;if(enemyPieces)score-=(9-enemyFront)*175;
     score+=(ownRace-enemyRace)*12;
     const ownW=threatCount(st,p,4),enemyW=threatCount(st,enemy,4);
     if(ownW)score+=760000+Math.min(ownW,4)*36000;if(enemyW)score-=920000+Math.min(enemyW,4)*42000;
@@ -873,15 +875,24 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     score += (ownBoard*ownBoard-enemyBoard*enemyBoard)*18;
     score += (enemyReserve-ownReserve)*42;
 
-    // Type balance: avoid creating a reserve that is tactically awkward when the opponent
-    // controls the corresponding counter-type on the board.
+    // Type balance: a reserve piece is worth more when it counters whatever the opponent
+    // currently has deployed on the board. RPS is symmetric/cyclic (canEatType: rock beats
+    // scissors, paper beats rock, scissors beats paper) so there is no fixed type hierarchy
+    // in the rules — value is entirely relative to the current board composition.
     for(let t=0;t<3;t++){
-      const ph=st.h[base+t], eh=st.h[eb+t];
-      score += (ph-eh)*(90 + t*8);
+      const beats=(t+2)%3; // the type index that t captures, per canEatType
+      score += st.h[base+t]*(60 + enemyByType[beats]*20);
+      score -= st.h[eb+t]*(60 + ownByType[beats]*20);
     }
     return Math.round(score);
   }
-  function findFront(st,p){let f=99;for(let r=0;r<9;r++)for(let c=0;c<9;c++){const q=st.b[idx(r,c)];if(q&&pOf(q)===p)f=Math.min(f,forwardDist(r,p));}return f===99?9:f;}
+  // A completed breakthrough ends the game immediately in the real rules, before the
+  // opponent ever gets to move. This is a cheap 9-cell scan of the goal row only.
+  function hasPieceAtGoal(st,p){
+    const g=goal(p),rowBase=g*9;
+    for(let c=0;c<9;c++){const code=st.b[rowBase+c];if(code&&pOf(code)===p)return true;}
+    return false;
+  }
 
   // ---------- search state ----------
   let searchStart=0,nodes=0,stop=false,rootRep=1,rootKeyA=0,rootKeyB=0,gameSeed=0,rootMoveCount=0;
@@ -904,7 +915,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     if(enemyWins>0)s+=60000000;
     if(moveIsForcing(st,p,a,enemyWins))s+=4200000;
     if(cap){
-      const target=st.b[idx(a.tr,a.tc)],victim=tOf(target),att=tOf(st.b[idx(a.fr,a.fc)]),victimV=[760,820,790][victim],attV=[760,820,790][att];
+      const target=st.b[idx(a.tr,a.tc)],victim=tOf(target),att=tOf(st.b[idx(a.fr,a.fc)]),victimV=CAPTURE_VICTIM_VAL[victim],attV=CAPTURE_VICTIM_VAL[att];
       s+=5200000+victimV*820-attV*310;s+=pieceAttackCount(st,a.tr,a.tc,p,att)*25000;s+=pieceDefenseCount(st,a.tr,a.tc,p,att)*8000;
       const danger=pieceAttackCount(st,a.tr,a.tc,opp(p),victim);s-=danger*36000;
     }
@@ -921,15 +932,37 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     for(let k=0;k<3;k++)if(depth<MAX_PLY&&sameMove(killers[depth][k],a)){s+=(k===0?3200000:(k===1?1800000:900000));break;}
     return s;
   }
+  // Reused scratch buffers for orderMoves — sized to comfortably exceed the engine's
+  // maximum practical branching factor (drops alone can reach ~3*36=108, plus board moves).
+  const ORDER_SCRATCH_CAP=320;
+  const orderScoreBuf=new Float64Array(ORDER_SCRATCH_CAP);
+  const orderIdxBuf=new Array(ORDER_SCRATCH_CAP);
+  const orderTmpBuf=new Array(ORDER_SCRATCH_CAP);
   function orderMoves(st,p,acts,depth,ttMove,enemyWins,ply){
     const n=acts.length;if(n<2)return acts;
-    // Score into detached wrapper objects rather than tagging acts[i]._score: adding then
-    // deleting a property on the move objects themselves would push them into V8's slow
-    // "dictionary mode" for the rest of the node, and those same objects have every field
-    // (type/fr/fc/tr/tc/t) re-read many times right after this in the search loop.
+    // Previously this allocated an {a,s,i} wrapper object per move on every single call
+    // (i.e. on every search/qsearch node). That's a lot of short-lived small-object churn
+    // at real node counts. Score into flat reused buffers instead: one Float64Array of
+    // scores and a plain index array we sort — no per-node object allocation at all.
+    if(n<=ORDER_SCRATCH_CAP){
+      for(let i=0;i<n;i++){orderScoreBuf[i]=scoreMove(st,p,acts[i],depth,ttMove,enemyWins,ply);orderIdxBuf[i]=i;}
+      const idxs=orderIdxBuf;
+      // Manual insertion sort on indices: branching factors here are small enough (rarely
+      // >150) that insertion sort beats Array.prototype.sort's per-call comparator overhead,
+      // and it's stable (ties keep original order), matching the previous behavior.
+      for(let i=1;i<n;i++){
+        const key=idxs[i],keyScore=orderScoreBuf[key];let j=i-1;
+        while(j>=0&&orderScoreBuf[idxs[j]]<keyScore){idxs[j+1]=idxs[j];j--;}
+        idxs[j+1]=key;
+      }
+      for(let i=0;i<n;i++)orderTmpBuf[i]=acts[idxs[i]];
+      for(let i=0;i<n;i++)acts[i]=orderTmpBuf[i];
+      return acts;
+    }
+    // Fallback for the rare case n exceeds scratch capacity — old allocating path.
     const scored=new Array(n);
     for(let i=0;i<n;i++)scored[i]={a:acts[i],s:scoreMove(st,p,acts[i],depth,ttMove,enemyWins,ply),i};
-    scored.sort((x,y)=>(y.s-x.s)||(x.i-y.i)); // explicit index tie-break == old stable sort, byte-for-byte
+    scored.sort((x,y)=>(y.s-x.s)||(x.i-y.i));
     for(let i=0;i<n;i++)acts[i]=scored[i].a;
     return acts;
   }
@@ -956,22 +989,40 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
 
   function qsearch(st,p,alpha,beta,ply,qply){
     if((nodes&1023)===0&&Date.now()-searchStart>TIME_LIMIT){stop=true;throw new Error('TO');}
-    nodes++;pathA[ply]=keyFor(st,p)[0];pathB[ply]=keyFor(st,p)[1];
+    nodes++;
+    const enemy0=opp(p);
+    if(hasPieceAtGoal(st,enemy0))return -MATE+ply; // enemy already broke through on the move that led here
+    pathA[ply]=keyFor(st,p)[0];pathB[ply]=keyFor(st,p)[1];
     const[keyA,keyB]=keyFor(st,p);if(repetitionDraw(keyA,keyB,ply))return DRAW;if(st.quiet>=100)return DRAW;
     const ownW=threatCount(st,p,1);if(ownW>0)return MATE-ply;const enemy=opp(p),enemyW=threatCount(st,enemy,1);
     if(enemyW>0){const evasions=[];legalActs(st,p,evasions,enemyW);if(evasions.length===0)return -MATE+ply;orderMoves(st,p,evasions,0,null,enemyW,ply);for(let i=0;i<evasions.length;i++){const a=evasions[i],u=makeMove(st,p,a),v=-qsearch(st,enemy,-beta,-alpha,ply+1,qply+1);unmakeMove(st,p,u);if(v>=beta)return beta;if(v>alpha)alpha=v;}return alpha;}
     const stand=evaluate(st,p);if(stand>=beta)return stand;if(stand>alpha)alpha=stand;if(qply>=Q_MAX)return stand;
     const acts=[],tactical=[];generateAll(st,p,acts);for(let i=0;i<acts.length;i++)if(tacticalMove(st,p,acts[i],0))tactical.push(acts[i]);if(!tactical.length)return stand;orderMoves(st,p,tactical,qply,null,0,ply);
     const lim=Math.min(tactical.length,Math.max(10,26-qply*2));
-    for(let i=0;i<lim;i++){const a=tactical[i],u=makeMove(st,p,a),v=-qsearch(st,enemy,-beta,-alpha,ply+1,qply+1);unmakeMove(st,p,u);if(v>=beta)return beta;if(v>alpha)alpha=v;}
+    const DELTA_MARGIN=64;
+    for(let i=0;i<lim;i++){
+      const a=tactical[i];
+      // Delta pruning: skip captures whose maximum plausible gain (captured piece's value
+      // plus a small margin for positional swing) still can't reach alpha. Only applies to
+      // captures — goal-reaching moves and evasions bypass this loop entirely, so it never
+      // prunes a winning breakthrough.
+      if(isCapture(st,a)){
+        const gain=CAPTURE_VICTIM_VAL[tOf(st.b[idx(a.tr,a.tc)])]+DELTA_MARGIN;
+        if(stand+gain<alpha)continue;
+      }
+      const u=makeMove(st,p,a),v=-qsearch(st,enemy,-beta,-alpha,ply+1,qply+1);unmakeMove(st,p,u);if(v>=beta)return beta;if(v>alpha)alpha=v;
+    }
     return alpha;
   }
 
   function search(st,p,depth,alpha,beta,ply,lastMove,allowExtension){
     if((nodes&1023)===0&&Date.now()-searchStart>TIME_LIMIT){stop=true;throw new Error('TO');}
-    nodes++;const kp=keyFor(st,p),keyA=kp[0],keyB=kp[1];pathA[ply]=keyA;pathB[ply]=keyB;if(repetitionDraw(keyA,keyB,ply))return DRAW;if(st.quiet>=100)return DRAW;
+    nodes++;
+    const enemy=opp(p);
+    if(hasPieceAtGoal(st,enemy))return -MATE+ply; // enemy already broke through on the move that led here
+    const kp=keyFor(st,p),keyA=kp[0],keyB=kp[1];pathA[ply]=keyA;pathB[ply]=keyB;if(repetitionDraw(keyA,keyB,ply))return DRAW;if(st.quiet>=100)return DRAW;
     const ownW=threatCount(st,p,1);if(ownW>0)return MATE-ply;
-    const enemy=opp(p),enemyW=threatCount(st,enemy,1);const ttSafe=ttEnabled&&rootRep<=1&&st.quiet<92;const tt=ttSafe?probeTT(keyA,keyB,ply):null;
+    const enemyW=threatCount(st,enemy,1);const ttSafe=ttEnabled&&rootRep<=1&&st.quiet<92;const tt=ttSafe?probeTT(keyA,keyB,ply):null;
     let ttMove=null;if(tt){ttMove=tt.move;if(tt.depth>=depth){if(tt.flag===1)return tt.val;if(tt.flag===2&&tt.val>=beta)return tt.val;if(tt.flag===3&&tt.val<=alpha)return tt.val;}}
     if(depth<=0)return qsearch(st,p,alpha,beta,ply,0);
     const acts=[];legalActs(st,p,acts,enemyW);if(!acts.length)return -MATE+ply;orderMoves(st,p,acts,depth,ttMove,enemyW,ply);const searchActs=trimSearchMoves(st,p,acts,depth,enemyW);
@@ -1158,6 +1209,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     const requestId=d.requestId;
     const st=fromInput(d.board,d.hands,d.quietTurnCount||0),ai=d.aiPlayer;
     if((d.moveCount||0)===0){clearTT();for(let i=0;i<killers.length;i++){killers[i][0]=null;killers[i][1]=null;killers[i][2]=null;}moveHistory.fill(0);dropHistory.fill(0);}
+    else{for(let i=0;i<moveHistory.length;i++)moveHistory[i]>>=1;for(let i=0;i<dropHistory.length;i++)dropHistory[i]>>=1;}
     ttGeneration=(ttGeneration+1)&255;if(ttGeneration===0)ttGeneration=1;
     gameSeed=mix32(Number(d.openingSeed)||((Date.now()^Math.floor(Math.random()*0xffffffff))>>>0));rootMoveCount=Number(d.moveCount)||0;rootRep=Math.max(1,Number(d.rootRepetitionCount)||1);
     searchStart=Date.now();nodes=0;stop=false;ttEnabled=true;pathA.fill(0);pathB.fill(0);pathPly.fill(0);
@@ -1719,7 +1771,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     setOnlineControlsVisible(false);
     render();
     const isPlayer = gameMode==='pvp' || w===playerSide;
-    document.getElementById('gameOverTitle').textContent = isPlayer ? (gameMode==='pvp'?`${w.toUpperCase()} VICTORY!`:'YOU WIN!') : 'YOU DEFEATED!';
+    document.getElementById('gameOverTitle').textContent = isPlayer ? (gameMode==='pvp'?`${w.toUpperCase()} VICTORY!`:'YOU WIN!') : 'YOU LOST!';
     document.getElementById('gameOverMsg').textContent = msg;
     document.getElementById('gameOverIcon').textContent = isPlayer ? '🏆' : '💔';
     isPlayer ? spawnConfetti() : spawnCryingRain();
@@ -1735,7 +1787,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     }
   }
   function spawnCryingRain() {
-    const l=document.getElementById('effectsLayer'); l.innerHTML=''; const c=['😭','🌧️','🥺','💔','😭'];
+    const l=document.getElementById('effectsLayer'); l.innerHTML=''; const c=['😭','🌧️','💔','😭'];
     for(let i=0;i<55;i++) {
       const e=document.createElement('div'); e.className='cry-emoji'; e.textContent=c[Math.floor(Math.random()*c.length)];
       e.style.left=Math.random()*100+'vw'; e.style.animationDuration=(Math.random()*2+1.8)+'s'; e.style.animationDelay=(Math.random()*1.2)+'s';
@@ -1757,7 +1809,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     if (isHistory) {
      
       let mt = '';
-      if(gameMode==='pve') mt = currentTurn===playerSide?' (Your Turn)':' (AI Thinking...)';
+      if(gameMode==='pve') mt = currentTurn===playerSide?' (Your Turn)':' (Thinking...)';
       else if(gameMode==='online') mt = currentTurn===playerSide?' (Your Turn)':' (Opponent Turn)';
       statusEl.textContent = `Turn: ${currentTurn==='blue'?'🔵 Blue':'🔴 Red'}${mt}`;
       
@@ -1769,7 +1821,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
       if(gameOver) { statusEl.textContent = 'Game Ended'; statusEl.style.color = '#e9dfd0'; }
       else {
         let mt = '';
-        if(gameMode==='pve') mt = turn===playerSide?' (Your Turn)':' (AI Thinking...)';
+        if(gameMode==='pve') mt = turn===playerSide?' (Your Turn)':' (Thinking...)';
         else if(gameMode==='online') mt = turn===playerSide?' (Your Turn)':' (Opponent Turn)';
         statusEl.textContent = `Turn: ${turn==='blue'?'🔵 Blue':'🔴 Red'}${mt}`;
         statusEl.style.color = turn==='blue'?'#58a6ff':'#ff7b72';
