@@ -824,7 +824,15 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   function legalActs(st,p,out,enemyWins){
     generateAll(st,p,out);
     if(enemyWins>0){
-      const filtered=[];for(let i=0;i<out.length;i++){const a=out[i],u=makeMove(st,p,a),remaining=threatCount(st,opp(p),1);unmakeMove(st,p,u);if(remaining===0)filtered.push(a);}out.length=0;for(let i=0;i<filtered.length;i++)out.push(filtered[i]);
+      const filtered=[];for(let i=0;i<out.length;i++){const a=out[i],u=makeMove(st,p,a),remaining=threatCount(st,opp(p),1);unmakeMove(st,p,u);if(remaining===0)filtered.push(a);}
+      // If every move leaves at least one of the opponent's simultaneous winning threats
+      // standing, the position is a genuine loss but NOT actually out of moves -- 'out' already
+      // holds real legal moves, they just don't save the game. Collapsing to an empty list here
+      // used to make the root treat "losing" the same as "no legal move at all" and send back no
+      // move whatsoever, which the main thread silently ignores -- so the game just sat there
+      // waiting forever, most visible right as the opponent set up an unstoppable win. Only
+      // replace 'out' with the filtered (safe) list when that list is non-empty.
+      if(filtered.length){out.length=0;for(let i=0;i<filtered.length;i++)out.push(filtered[i]);}
     }
     return out;
   }
@@ -1024,6 +1032,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   function qsearch(st,p,alpha,beta,ply,qply){
     if((nodes&1023)===0&&Date.now()-searchStart>TIME_LIMIT){stop=true;throw new Error('TO');}
     nodes++;
+    if(ply>=MAX_PLY-4)return evaluate(st,p); // hard recursion-depth guard, see search()
     const enemy0=opp(p);
     if(hasPieceAtGoal(st,enemy0))return -MATE+ply; // enemy already broke through on the move that led here
     pathA[ply]=keyFor(st,p)[0];pathB[ply]=keyFor(st,p)[1];
@@ -1052,6 +1061,14 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   function search(st,p,depth,alpha,beta,ply,lastMove,allowExtension){
     if((nodes&1023)===0&&Date.now()-searchStart>TIME_LIMIT){stop=true;throw new Error('TO');}
     nodes++;
+    // Extensions (check/threat/forcing-reply extensions below) can keep the depth budget from
+    // shrinking for many plies in a row during a long forced sequence -- exactly what a
+    // near-breakthrough race produces. Without an absolute recursion-depth ceiling here, a long
+    // enough forcing chain can recurse deep enough to blow the JS call stack; that throws a
+    // RangeError, which isn't the 'TO' timeout error the loop below knows how to handle, so it
+    // propagates out of onmessage entirely and the worker never replies -- the bot "won't
+    // respond". Capping ply hard-stops that runaway chain well within the JS stack limit.
+    if(ply>=MAX_PLY-4)return evaluate(st,p);
     const enemy=opp(p);
     if(hasPieceAtGoal(st,enemy))return -MATE+ply; // enemy already broke through on the move that led here
     const kp=keyFor(st,p),keyA=kp[0],keyB=kp[1];pathA[ply]=keyA;pathB[ply]=keyB;if(repetitionDraw(keyA,keyB,ply))return DRAW;if(st.quiet>=100)return DRAW;
@@ -1241,6 +1258,23 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   self.onmessage=function(e){
     const d=e.data||{};if(!d.board||!d.hands||!d.aiPlayer)return;
     const requestId=d.requestId;
+    try{
+      handleSearchRequest(d,requestId);
+    }catch(err){
+      // Last-resort safety net: whatever went wrong above, the main thread is sitting there
+      // waiting for a move. Reply with any legal move rather than leaving the game stuck --
+      // an imperfect move beats a bot that silently never responds.
+      try{
+        const st=fromInput(d.board,d.hands,d.quietTurnCount||0),ai=d.aiPlayer;
+        const enemyWins=threatCount(st,opp(ai),1),acts=[];legalActs(st,ai,acts,enemyWins);
+        self.postMessage({requestId,bestAction:toExternal(acts[0]||null),stats:{depth:0,nodes,score:0,engine:'SSS Titan Engine v9 - Material Guard (fallback)'}});
+      }catch(err2){
+        self.postMessage({requestId,bestAction:null,stats:{depth:0,nodes,score:0,engine:'SSS Titan Engine v9 - Material Guard (fallback)'}});
+      }
+    }
+  };
+
+  function handleSearchRequest(d,requestId){
     const preset=DIFFICULTY_PRESETS[d.difficulty]||DIFFICULTY_PRESETS.hard;
     TIME_LIMIT=preset.time; MAX_DEPTH=preset.maxDepth;
     const st=fromInput(d.board,d.hands,d.quietTurnCount||0),ai=d.aiPlayer;
