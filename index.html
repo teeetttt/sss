@@ -10,10 +10,44 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
+    /* ---------- Design tokens ----------
+       Centralized warm, natural palette. Slightly desaturated earth tones,
+       softer/lower-opacity shadows, gentle glows instead of hard neon rings. */
+    :root {
+      --c-bg: #1a1410;
+      --c-bg-soft: #201810;
+      --c-surface: rgba(42, 34, 26, 0.72);
+      --c-surface-solid: #2a2119;
+      --c-panel-border: rgba(238, 222, 197, 0.14);
+      --c-panel-border-strong: rgba(238, 222, 197, 0.22);
+      --c-text: #ece1d1;
+      --c-text-soft: #b3a493;
+      --c-text-dim: #8f8271;
+
+      --c-gold: #d9a75c;
+      --c-gold-bright: #e8bd7a;
+      --c-amber: #c17f3f;
+      --c-clay: #c17a52;
+      --c-clay-bright: #d99a70;
+      --c-sage: #7a9c6e;
+      --c-sage-bright: #94b585;
+      --c-sky: #5b8fc4;
+      --c-sky-bright: #7aa8d6;
+      --c-rose: #c15f52;
+      --c-rose-bright: #d97e6e;
+
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 11px;
+
+      --shadow-soft: 0 10px 28px rgba(20, 14, 8, 0.35);
+      --shadow-lift: 0 14px 34px rgba(20, 14, 8, 0.4);
+      --ease-natural: cubic-bezier(0.33, 1, 0.68, 1);
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
     body {
-      background: #16120d;
-      color: #e9dfd0;
+      background: var(--c-bg);
+      color: var(--c-text);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
@@ -22,15 +56,16 @@
       overflow-x: hidden;
       position: relative;
       padding: 10px;
+      line-height: 1.5;
     }
 
     .hidden { display: none !important; }
 
     .bg-glow {
       position: absolute;
-      width: 700px;
-      height: 700px;
-      background: radial-gradient(circle, rgba(201, 144, 74, 0.14) 0%, rgba(22, 18, 13, 0) 70%);
+      width: 760px;
+      height: 760px;
+      background: radial-gradient(circle, rgba(193, 122, 82, 0.16) 0%, rgba(217, 167, 92, 0.05) 45%, rgba(26, 20, 16, 0) 72%);
       top: 50%; left: 50%;
       transform: translate(-50%, -50%);
       pointer-events: none;
@@ -55,14 +90,14 @@
       font-family: 'Fraunces', Georgia, serif;
       font-size: clamp(22px, 4.5vw, 32px);
       font-weight: 600;
-      color: #e3b45c;
-      letter-spacing: 1px;
-      text-shadow: 0 0 24px rgba(227, 179, 65, 0.45);
-      animation: pulse 1.8s infinite ease-in-out;
+      color: var(--c-gold);
+      letter-spacing: 0.5px;
+      text-shadow: 0 0 30px rgba(217, 167, 92, 0.35);
+      animation: pulse 2.2s infinite var(--ease-natural);
     }
     @keyframes pulse {
-      0%, 100% { opacity: 0.35; transform: scale(0.96); }
-      50% { opacity: 1; transform: scale(1.04); }
+      0%, 100% { opacity: 0.4; transform: scale(0.97); }
+      50% { opacity: 1; transform: scale(1.03); }
     }
 
     .top-bar {
@@ -78,21 +113,21 @@
 
     .volume-control {
       display: flex; align-items: center; gap: 10px;
-      background: rgba(38, 31, 24, 0.85);
-      border: 1px solid rgba(244, 228, 202, 0.14);
+      background: var(--c-surface);
+      border: 1px solid var(--c-panel-border);
       padding: 8px 18px; border-radius: 30px;
       backdrop-filter: blur(10px);
-      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+      box-shadow: var(--shadow-soft);
     }
-    .volume-icon { font-size: 18px; cursor: pointer; color: #e3b45c; transition: transform 0.2s; }
-    .volume-icon:hover { transform: scale(1.15); }
-    .volume-slider { -webkit-appearance: none; width: 80px; height: 5px; border-radius: 3px; background: #3a2f24; outline: none; }
-    .volume-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #e3b45c; cursor: pointer; box-shadow: 0 0 8px #e3b45c; }
-    .track-info { font-size: 12px; color: #a89a87; margin-left: 4px; max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .volume-icon { font-size: 18px; cursor: pointer; color: var(--c-gold); transition: transform 0.25s var(--ease-natural); }
+    .volume-icon:hover { transform: scale(1.15) rotate(-4deg); }
+    .volume-slider { -webkit-appearance: none; width: 80px; height: 5px; border-radius: 3px; background: #453a2c; outline: none; }
+    .volume-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--c-gold); cursor: pointer; box-shadow: 0 0 6px rgba(217,167,92,0.6); }
+    .track-info { font-size: 12px; color: var(--c-text-soft); margin-left: 4px; max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     .screen-overlay {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(22, 18, 13, 0.94);
+      background: rgba(26, 20, 16, 0.92);
       backdrop-filter: blur(20px);
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       z-index: 100; transition: opacity 0.3s ease, visibility 0.3s; padding: 20px;
@@ -100,125 +135,186 @@
 
     .game-title {
       font-family: 'Fraunces', Georgia, serif;
-      font-size: clamp(46px, 10vw, 72px); font-weight: 600; letter-spacing: 2px;
-      background: linear-gradient(135deg, #e3b45c 0%, #c9762f 100%);
+      font-size: clamp(46px, 10vw, 72px); font-weight: 600; letter-spacing: 1px;
+      background: linear-gradient(135deg, var(--c-gold-bright) 0%, var(--c-clay) 100%);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      margin-bottom: 8px; text-align: center; text-shadow: 0 0 40px rgba(227, 179, 65, 0.25);
+      margin-bottom: 8px; text-align: center; text-shadow: 0 0 46px rgba(217, 167, 92, 0.2);
     }
-    .game-subtitle { font-size: clamp(13px, 2.2vw, 16px); color: #a89a87; margin-bottom: 40px; letter-spacing: 4px; text-align: center; font-weight: 600; }
+    .game-subtitle { font-size: clamp(13px, 2.2vw, 16px); color: var(--c-text-soft); margin-bottom: 40px; letter-spacing: 3px; text-align: center; font-weight: 600; }
 
-    .btn-group { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 320px; }
+    .btn-group { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 320px; }
 
     .btn {
-      background: rgba(38, 31, 24, 0.85); border: 1px solid rgba(244, 228, 202, 0.16);
-      color: #e9dfd0; padding: 16px 28px; border-radius: 16px; font-size: 16px; font-weight: 700;
-      cursor: pointer; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      background: var(--c-surface); border: 1px solid var(--c-panel-border);
+      color: var(--c-text); padding: 16px 28px; border-radius: var(--radius-md); font-size: 16px; font-weight: 600;
+      cursor: pointer; transition: transform 0.3s var(--ease-natural), box-shadow 0.3s var(--ease-natural), background 0.25s ease;
       display: flex; align-items: center; justify-content: center; gap: 12px;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+      box-shadow: var(--shadow-soft);
       touch-action: manipulation;
     }
-    .btn:hover { transform: translateY(-3px); }
-    .btn:active { transform: translateY(-1px) scale(0.98); }
+    .btn:hover { transform: translateY(-2px); }
+    .btn:active { transform: translateY(0) scale(0.98); }
 
-    .btn-pvp { background: linear-gradient(135deg, #1f6beb 0%, #388bfd 100%); border: none; color: #ffffff; box-shadow: 0 6px 20px rgba(31, 107, 235, 0.35); }
-    .btn-pvp:hover { background: linear-gradient(135deg, #388bfd 0%, #58a6ff 100%); box-shadow: 0 8px 25px rgba(56, 139, 253, 0.5); }
-    .btn-pve { background: linear-gradient(135deg, #8957e5 0%, #a371f7 100%); border: none; color: #ffffff; box-shadow: 0 6px 20px rgba(137, 87, 229, 0.35); }
-    .btn-pve:hover { background: linear-gradient(135deg, #a371f7 0%, #bc8cff 100%); box-shadow: 0 8px 25px rgba(163, 113, 247, 0.5); }
-    .btn-online { background: linear-gradient(135deg, #238636 0%, #2ea043 100%); border: none; color: #ffffff; box-shadow: 0 6px 20px rgba(35, 134, 54, 0.35); }
-    .btn-online:hover { background: linear-gradient(135deg, #2ea043 0%, #3fb950 100%); box-shadow: 0 8px 25px rgba(46, 160, 67, 0.5); }
-    .btn-primary { background: linear-gradient(135deg, #c9762f 0%, #e3b45c 100%); border: none; color: #1c1712; }
-    .btn-primary:hover { background: linear-gradient(135deg, #d9862f 0%, #f0c169 100%); box-shadow: 0 8px 25px rgba(227, 179, 65, 0.4); }
-    .btn-red { background: linear-gradient(135deg, #da3633 0%, #f85149 100%); border: none; color: #fff; }
-    .btn-red:hover { background: linear-gradient(135deg, #f85149 0%, #ff7b72 100%); box-shadow: 0 8px 25px rgba(248, 81, 73, 0.45); }
-    .btn.diff-active { border-color: #e3b45c; background: rgba(227, 179, 65, 0.2); box-shadow: 0 0 14px rgba(227, 179, 65, 0.35); color: #f7efe0; }
+    .btn-pvp { background: linear-gradient(135deg, var(--c-sky) 0%, var(--c-sky-bright) 100%); border: none; color: #fff7ee; box-shadow: 0 8px 22px rgba(91, 143, 196, 0.28); }
+    .btn-pvp:hover { box-shadow: 0 10px 26px rgba(91, 143, 196, 0.4); }
+    .btn-pve { background: linear-gradient(135deg, var(--c-clay) 0%, var(--c-clay-bright) 100%); border: none; color: #2a1a10; box-shadow: 0 8px 22px rgba(193, 122, 82, 0.28); }
+    .btn-pve:hover { box-shadow: 0 10px 26px rgba(193, 122, 82, 0.4); }
+    .btn-online { background: linear-gradient(135deg, var(--c-sage) 0%, var(--c-sage-bright) 100%); border: none; color: #16210f; box-shadow: 0 8px 22px rgba(122, 156, 110, 0.28); }
+    .btn-online:hover { box-shadow: 0 10px 26px rgba(122, 156, 110, 0.4); }
+    .btn-primary { background: linear-gradient(135deg, var(--c-amber) 0%, var(--c-gold) 100%); border: none; color: #241a10; }
+    .btn-primary:hover { box-shadow: 0 10px 26px rgba(217, 167, 92, 0.35); }
+    .btn-red { background: linear-gradient(135deg, var(--c-rose) 0%, var(--c-rose-bright) 100%); border: none; color: #2a120e; }
+    .btn-red:hover { box-shadow: 0 10px 26px rgba(193, 95, 82, 0.35); }
+    .btn.diff-active { border-color: var(--c-gold); background: rgba(217, 167, 92, 0.18); box-shadow: 0 0 0 3px rgba(217, 167, 92, 0.14); color: #f7ecd9; }
 
     .modal-box {
-      background: #241d16; border: 1px solid rgba(244, 228, 202, 0.14); border-radius: 20px;
-      padding: 32px; max-width: 520px; width: 100%; box-shadow: 0 25px 60px rgba(0,0,0,0.7); text-align: center;
+      background: var(--c-surface-solid); border: 1px solid var(--c-panel-border); border-radius: var(--radius-lg);
+      padding: 32px; max-width: 520px; width: 100%; box-shadow: 0 28px 60px rgba(14, 9, 5, 0.55); text-align: center;
+      animation: modalRise 0.4s var(--ease-natural);
     }
-    .modal-title { font-family: 'Fraunces', Georgia, serif; font-size: clamp(22px, 3.5vw, 27px); font-weight: 600; color: #f7efe0; margin-bottom: 18px; }
-    .modal-body { font-size: clamp(15px, 2.2vw, 17px); color: #e9dfd0; line-height: 1.8; text-align: left; margin-bottom: 26px; }
-    .modal-body ul { padding-left: 22px; }
-    .modal-body li { margin-bottom: 12px; }
-    .modal-body strong { color: #e3b45c; font-size: 1.05em; }
+    @keyframes modalRise { from { opacity: 0; transform: translateY(14px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    .modal-title { font-family: 'Fraunces', Georgia, serif; font-size: clamp(22px, 3.5vw, 27px); font-weight: 600; color: #f5ead8; margin-bottom: 18px; }
+    .modal-body { font-size: clamp(15px, 2.2vw, 17px); color: var(--c-text); line-height: 1.85; text-align: left; margin-bottom: 26px; }
+    .modal-body ul { padding-left: 22px; list-style: none; }
+    .modal-body li { margin-bottom: 14px; position: relative; padding-left: 6px; }
+    .modal-body li::before { content: '·'; color: var(--c-gold); font-weight: 800; position: absolute; left: -14px; }
+    .modal-body strong { color: var(--c-gold); font-size: 1.05em; }
+
+    /* Tutorial: reveal each rule one at a time instead of dumping the whole list at once. */
+    #tutorialContentScreen .modal-body li {
+      opacity: 0;
+      transform: translateX(-8px);
+      animation: tutorialStepIn 0.45s var(--ease-natural) forwards;
+    }
+    #tutorialContentScreen .modal-body li:nth-child(1) { animation-delay: 0.05s; }
+    #tutorialContentScreen .modal-body li:nth-child(2) { animation-delay: 0.22s; }
+    #tutorialContentScreen .modal-body li:nth-child(3) { animation-delay: 0.39s; }
+    #tutorialContentScreen .modal-body li:nth-child(4) { animation-delay: 0.56s; }
+    #tutorialContentScreen .modal-body li:nth-child(5) { animation-delay: 0.73s; }
+    @keyframes tutorialStepIn {
+      from { opacity: 0; transform: translateX(-8px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    #tutorialContentScreen .modal-body strong {
+      display: inline-block;
+      animation: tutorialHighlight 1.1s var(--ease-natural) forwards;
+    }
+    #tutorialContentScreen .modal-body li:nth-child(1) strong { animation-delay: 0.15s; }
+    #tutorialContentScreen .modal-body li:nth-child(2) strong { animation-delay: 0.32s; }
+    #tutorialContentScreen .modal-body li:nth-child(3) strong { animation-delay: 0.49s; }
+    #tutorialContentScreen .modal-body li:nth-child(4) strong { animation-delay: 0.66s; }
+    #tutorialContentScreen .modal-body li:nth-child(5) strong { animation-delay: 0.83s; }
+    @keyframes tutorialHighlight {
+      0% { text-shadow: 0 0 0 rgba(217, 167, 92, 0); }
+      35% { text-shadow: 0 0 14px rgba(217, 167, 92, 0.65); }
+      100% { text-shadow: 0 0 0 rgba(217, 167, 92, 0); }
+    }
+    #tutorialPromptScreen .modal-box { animation: modalRise 0.4s var(--ease-natural); }
 
     .game-layout { display: flex; gap: 16px; align-items: flex-end; justify-content: center; z-index: 1; margin-top: 35px; }
 
     .hand-box {
-      width: 135px; height: 480px; background: rgba(38, 31, 24, 0.6); border: 2px dashed rgba(244, 228, 202, 0.16);
-      border-radius: 18px; padding: 12px; display: flex; flex-direction: column; gap: 12px; transition: border-color 0.3s;
+      width: 135px; height: 480px; background: var(--c-surface); border: 2px dashed var(--c-panel-border);
+      border-radius: var(--radius-lg); padding: 12px; display: flex; flex-direction: column; gap: 12px; transition: border-color 0.3s, box-shadow 0.3s;
     }
     .hand-box.active-turn { border-style: solid; }
-    .hand-box.blue-hand.active-turn { border-color: #388bfd; box-shadow: 0 0 18px rgba(56, 139, 253, 0.25); }
-    .hand-box.red-hand.active-turn { border-color: #f85149; box-shadow: 0 0 18px rgba(248, 81, 73, 0.25); }
+    .hand-box.blue-hand.active-turn { border-color: var(--c-sky-bright); box-shadow: 0 0 20px rgba(91, 143, 196, 0.18); }
+    .hand-box.red-hand.active-turn { border-color: var(--c-rose-bright); box-shadow: 0 0 20px rgba(193, 95, 82, 0.18); }
 
     .hand-slot {
-      flex: 1; background: rgba(20, 15, 10, 0.7); border: 1px solid rgba(244, 228, 202, 0.1); border-radius: 12px;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; position: relative;
+      flex: 1; background: rgba(22, 16, 11, 0.65); border: 1px solid var(--c-panel-border); border-radius: var(--radius-sm);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: all 0.25s var(--ease-natural); position: relative;
       touch-action: manipulation;
     }
-    .hand-slot:hover:not(.disabled) { background: rgba(227, 179, 65, 0.14); border-color: #e3b45c; }
-    .hand-slot.selected { border-color: #e3b45c; background: rgba(227, 179, 65, 0.22); box-shadow: 0 0 14px rgba(227, 179, 65, 0.4); }
-    .hand-slot.disabled { opacity: 0.3; cursor: not-allowed; }
-    .hand-badge { position: absolute; top: 6px; right: 8px; font-size: 12px; font-weight: bold; color: #a89a87; }
+    .hand-slot:hover:not(.disabled) { background: rgba(217, 167, 92, 0.12); border-color: var(--c-gold); transform: translateY(-1px); }
+    .hand-slot.selected { border-color: var(--c-gold); background: rgba(217, 167, 92, 0.2); box-shadow: 0 0 0 3px rgba(217, 167, 92, 0.15); }
+    .hand-slot.disabled { opacity: 0.32; cursor: not-allowed; }
+    .hand-badge { position: absolute; top: 6px; right: 8px; font-size: 12px; font-weight: bold; color: var(--c-text-soft); }
     .hand-icon { font-size: 26px; }
 
     .board-container { display: flex; flex-direction: column; align-items: center; gap: 12px; }
     .status-bar-wrapper { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
-    .status-badge { padding: 8px 20px; border-radius: 24px; background: rgba(38, 31, 24, 0.8); border: 1px solid rgba(244, 228, 202, 0.14); font-size: 14px; font-weight: 700; letter-spacing: 0.5px; transition: all 0.2s; }
-    
-    .status-badge.history-mode { background: #3a2e05 !important; border-color: #d29922 !important; color: #d29922 !important; }
+    .status-badge { padding: 8px 20px; border-radius: 24px; background: var(--c-surface); border: 1px solid var(--c-panel-border); font-size: 14px; font-weight: 700; letter-spacing: 0.3px; transition: all 0.25s var(--ease-natural); }
 
-    .btn-flip { padding: 8px 16px; border-radius: 24px; font-size: 13px; font-weight: 700; background: rgba(38, 31, 24, 0.85); border: 1px solid rgba(244, 228, 202, 0.16); color: #e9dfd0; cursor: pointer; transition: all 0.2s ease; touch-action: manipulation; }
-    .btn-flip:hover { background: rgba(227, 179, 65, 0.16); border-color: #e3b45c; color: #ffffff; }
+    .status-badge.history-mode { background: rgba(217, 167, 92, 0.16) !important; border-color: var(--c-gold) !important; color: var(--c-gold-bright) !important; }
+
+    .btn-flip { padding: 8px 16px; border-radius: 24px; font-size: 13px; font-weight: 700; background: var(--c-surface); border: 1px solid var(--c-panel-border); color: var(--c-text); cursor: pointer; transition: all 0.25s var(--ease-natural); touch-action: manipulation; }
+    .btn-flip:hover { background: rgba(217, 167, 92, 0.14); border-color: var(--c-gold); color: #fff; }
 
     .board-wrapper {
       display: grid; grid-template-columns: 24px 1fr 24px; grid-template-rows: 24px 1fr 24px;
-      align-items: center; justify-items: center; background: rgba(38, 31, 24, 0.4); padding: 6px; border-radius: 18px; border: 1px solid rgba(244, 228, 202, 0.14); height: 480px;
+      align-items: center; justify-items: center; background: rgba(42, 34, 26, 0.35); padding: 6px; border-radius: var(--radius-lg); border: 1px solid var(--c-panel-border); height: 480px;
     }
 
-    .coord-col, .coord-row { display: flex; color: #a89a87; font-size: 12px; font-weight: 700; }
+    .coord-col, .coord-row { display: flex; color: var(--c-text-soft); font-size: 12px; font-weight: 700; }
     .coord-col { width: 100%; justify-content: space-around; }
     .coord-row { height: 100%; flex-direction: column; justify-content: space-around; }
 
     .board {
       display: grid; grid-template-columns: repeat(9, 44px); grid-template-rows: repeat(9, 44px); gap: 2px;
-      background: rgba(244, 228, 202, 0.08); padding: 6px; border: 1px solid rgba(244, 228, 202, 0.16); border-radius: 12px;
-      box-shadow: 0 16px 40px rgba(0,0,0,0.7), inset 0 0 15px rgba(255,255,255,0.02); transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      background: rgba(238, 222, 197, 0.07); padding: 6px; border: 1px solid var(--c-panel-border); border-radius: 14px;
+      box-shadow: 0 18px 40px rgba(14, 9, 5, 0.5), inset 0 0 15px rgba(255,255,255,0.02); transition: transform 0.5s var(--ease-natural);
+      --flip-deg: 0deg;
     }
-    .board.flipped { transform: rotate(180deg); }
-    .board.flipped .piece { transform: rotate(180deg); }
-    .board.flipped .piece:hover { transform: rotate(180deg) scale(1.08); }
+    .board.flipped { transform: rotate(180deg); --flip-deg: 180deg; }
 
-    .cell { width: 44px; height: 44px; background: #1c1712; border: 1px solid rgba(244, 228, 202, 0.06); border-radius: 4px; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; transition: background 0.15s, border-color 0.15s; touch-action: manipulation; }
-    .cell:hover { background: #26201a; border-color: rgba(244, 228, 202, 0.22); }
-    .cell.blue-zone { background: #1a2030; }
-    .cell.red-zone { background: #291a1c; }
-    .cell.blue-zone:hover { background: #212a3d; }
-    .cell.red-zone:hover { background: #362225; }
-    .cell.selected { background: #3a2e05 !important; border: 2px solid #d29922 !important; }
-    .cell.highlight-move { background: #0d381e !important; border: 2px solid #2da44e !important; }
-    .cell.highlight-drop { background: #092c5c !important; border: 2px solid #388bfd !important; }
-    .cell.last-action { border: 2px solid #e3b341 !important; box-shadow: inset 0 0 12px rgba(227, 179, 65, 0.5), 0 0 8px rgba(227, 179, 65, 0.4); }
+    .cell { width: 44px; height: 44px; background: #241c15; border: 1px solid rgba(238, 222, 197, 0.05); border-radius: 7px; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; transition: background 0.2s ease, border-color 0.2s ease; touch-action: manipulation; overflow: visible; }
+    .cell:hover { background: #2d2419; border-color: rgba(238, 222, 197, 0.2); }
+    .cell.blue-zone { background: #212a38; }
+    .cell.red-zone { background: #2f2220; }
+    .cell.blue-zone:hover { background: #283349; }
+    .cell.red-zone:hover { background: #3a2a27; }
+    .cell.selected { background: #40320f !important; border: 2px solid var(--c-gold) !important; }
+    .cell.highlight-move { background: #17331f !important; border: 2px solid var(--c-sage-bright) !important; }
+    .cell.highlight-drop { background: #17293f !important; border: 2px solid var(--c-sky-bright) !important; }
+    .cell.last-action { border: 2px solid var(--c-gold) !important; box-shadow: inset 0 0 12px rgba(217, 167, 92, 0.35), 0 0 10px rgba(217, 167, 92, 0.25); }
 
-    .piece { width: 36px; height: 36px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 18px; box-shadow: 0 3px 8px rgba(0,0,0,0.4); transition: transform 0.2s, background 0.3s; }
-    .piece:hover { transform: scale(1.08); }
-    .piece.blue { background: radial-gradient(circle at 30% 30%, #388bfd, #1f6beb); border: 1px solid #58a6ff; box-shadow: 0 0 10px rgba(56, 139, 253, 0.4); }
-    .piece.red { background: radial-gradient(circle at 30% 30%, #f85149, #da3633); border: 1px solid #ff7b72; box-shadow: 0 0 10px rgba(248, 81, 73, 0.4); }
+    .cell.impact::after {
+      content: '';
+      position: absolute; inset: -6px; border-radius: 50%;
+      border: 2px solid var(--ring-color, var(--c-gold-bright));
+      opacity: 0.9;
+      animation: cellRipple 0.6s var(--ease-natural) forwards;
+      pointer-events: none;
+    }
+    .cell.impact.capture::after { --ring-color: var(--c-rose-bright); }
+    @keyframes cellRipple {
+      0% { transform: scale(0.4); opacity: 0.8; }
+      100% { transform: scale(1.55); opacity: 0; }
+    }
 
-    .log-box { width: 185px; height: 480px; background: rgba(38, 31, 24, 0.6); border: 1px solid rgba(244, 228, 202, 0.14); border-radius: 18px; padding: 12px; display: flex; flex-direction: column; }
-    .log-header { font-size: 13px; font-weight: 700; color: #a89a87; margin-bottom: 10px; letter-spacing: 1px; text-align: center; border-bottom: 1px solid rgba(244, 228, 202, 0.12); padding-bottom: 6px; }
+    .piece { width: 36px; height: 36px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 18px; box-shadow: 0 4px 10px rgba(14, 9, 5, 0.4); transition: transform 0.25s var(--ease-natural), background 0.3s ease; transform: rotate(var(--flip-deg, 0deg)); }
+    .piece:hover { transform: rotate(var(--flip-deg, 0deg)) scale(1.1); }
+    .piece.blue { background: radial-gradient(circle at 30% 30%, var(--c-sky-bright), var(--c-sky)); border: 1px solid rgba(175, 167, 167, 0.452); box-shadow: 0 0 10px rgba(6, 65, 133, 0.897); }
+    .piece.red { background: radial-gradient(circle at 30% 30%, var(--c-rose-bright), var(--c-rose)); border: 1px solid rgba(175, 167, 167, 0.452); box-shadow: 0 0 10px rgba(209, 32, 9, 0.884); }
+
+    .piece.piece-landed { animation: pieceLand 0.42s var(--ease-natural); }
+    .piece.piece-captured { animation: pieceCapture 0.5s var(--ease-natural); }
+    @keyframes pieceLand {
+      0% { transform: rotate(var(--flip-deg, 0deg)) scale(0.35); opacity: 0.4; }
+      55% { transform: rotate(var(--flip-deg, 0deg)) scale(1.14); opacity: 1; }
+      100% { transform: rotate(var(--flip-deg, 0deg)) scale(1); opacity: 1; }
+    }
+    @keyframes pieceCapture {
+      0% { transform: rotate(calc(var(--flip-deg, 0deg) - 8deg)) scale(0.3); opacity: 0.3; }
+      50% { transform: rotate(calc(var(--flip-deg, 0deg) + 4deg)) scale(1.22); opacity: 1; }
+      75% { transform: rotate(calc(var(--flip-deg, 0deg) - 2deg)) scale(0.94); }
+      100% { transform: rotate(var(--flip-deg, 0deg)) scale(1); opacity: 1; }
+    }
+
+    .log-box { width: 185px; height: 480px; background: var(--c-surface); border: 1px solid var(--c-panel-border); border-radius: var(--radius-lg); padding: 12px; display: flex; flex-direction: column; }
+    .log-header { font-size: 13px; font-weight: 700; color: var(--c-text-soft); margin-bottom: 10px; letter-spacing: 0.5px; text-align: center; border-bottom: 1px solid var(--c-panel-border); padding-bottom: 6px; }
     .log-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12px; padding-right: 4px; }
     .log-list::-webkit-scrollbar { width: 4px; }
-    .log-list::-webkit-scrollbar-thumb { background: #3a2f24; border-radius: 4px; }
-    .log-item { background: rgba(20, 15, 10, 0.6); padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(244, 228, 202, 0.06); color: #e9dfd0; display: flex; align-items: center; justify-content: space-between; transition: all 0.2s; }
-    .log-item:hover { background: rgba(227, 179, 65, 0.14); border-color: #e3b45c; }
-    .log-item.active-history { background: #3a2e05; border-color: #d29922; }
-    .log-item.blue { border-left: 3px solid #388bfd; }
-    .log-item.red { border-left: 3px solid #f85149; }
+    .log-list::-webkit-scrollbar-thumb { background: #453a2c; border-radius: 4px; }
+    .log-item { background: rgba(22, 16, 11, 0.55); padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid rgba(238, 222, 197, 0.05); color: var(--c-text); display: flex; align-items: center; justify-content: space-between; transition: all 0.2s ease; }
+    .log-item:hover { background: rgba(217, 167, 92, 0.12); border-color: var(--c-gold); }
+    .log-item.active-history { background: rgba(217, 167, 92, 0.16); border-color: var(--c-gold); }
+    .log-item.blue { border-left: 3px solid var(--c-sky-bright); }
+    .log-item.red { border-left: 3px solid var(--c-rose-bright); }
 
-    .input-field { width: 100%; background: #140f0a; border: 1px solid rgba(244, 228, 202, 0.2); color: #f7efe0; padding: 12px 16px; border-radius: 12px; font-size: 16px; text-align: center; letter-spacing: 2px; outline: none; margin-bottom: 16px; }
-    .input-field:focus { border-color: #e3b45c; box-shadow: 0 0 10px rgba(227, 179, 65, 0.3); }
+    .input-field { width: 100%; background: #191209; border: 1px solid var(--c-panel-border-strong); color: #f5ead8; padding: 12px 16px; border-radius: var(--radius-sm); font-size: 16px; text-align: center; letter-spacing: 2px; outline: none; margin-bottom: 16px; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+    .input-field:focus { border-color: var(--c-gold); box-shadow: 0 0 0 3px rgba(217, 167, 92, 0.16); }
 
     .effects-layer { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 150; overflow: hidden; }
     .confetti { position: absolute; width: 10px; height: 10px; top: -10px; animation: confettiFall linear infinite; }
@@ -350,8 +446,8 @@
     .chat-input:focus { border-color: #e3b45c; box-shadow: 0 0 10px rgba(227,179,65,.22); }
     .chat-send {
       flex: 0 0 auto; border: 0; border-radius: 11px; padding: 0 16px; min-height: 42px;
-      background: linear-gradient(135deg, #c9762f 0%, #e3b45c 100%);
-      color: #1c1712; font-weight: 800; cursor: pointer; touch-action: manipulation;
+      background: linear-gradient(135deg, var(--c-amber) 0%, var(--c-gold) 100%);
+      color: #241a10; font-weight: 700; cursor: pointer; touch-action: manipulation;
     }
     .chat-send:hover { filter: brightness(1.08); }
 
@@ -540,20 +636,8 @@
       <p style="color:#a89a87; margin-bottom: 24px; font-size: 16px; font-weight: 600;" id="gameOverMsg"></p>
       <div class="btn-group" style="max-width: 100%;">
         <button class="btn btn-primary" style="width: 100%;" onclick="restartGame()">🔄 Play Again</button>
-        <button class="btn" style="width: 100%;" onclick="shareGame()">🔗 Share Game</button>
         <button class="btn" style="width: 100%;" onclick="showStartScreen()">🏠 Back to Main Menu</button>
       </div>
-    </div>
-  </div>
-
-  <div class="screen-overlay hidden" id="shareScreen" style="z-index: 2050;">
-    <div class="modal-box" style="max-width: 460px;">
-      <div class="modal-title">🔗 Share This Game</div>
-      <p id="shareModeLabel" style="color:#a89a87; margin-bottom: 14px; font-size: 14px;"></p>
-      <input type="text" id="shareLinkInput" class="input-field" readonly onclick="this.select()">
-      <button class="btn btn-primary" style="width: 100%; margin-bottom: 12px;" onclick="copyShareLink()">📋 Copy Link</button>
-      <button class="btn" style="width: 100%; margin-bottom: 12px; font-size: 14px;" onclick="showStartScreen()">🏠 Main Menu</button>
-      <button class="btn" style="width: 100%; font-size: 14px;" onclick="closeShareScreen()">Close</button>
     </div>
   </div>
 
@@ -590,7 +674,6 @@
     <div class="board-container">
       <div class="status-bar-wrapper">
         <div class="status-badge" id="statusBar">Waiting to Start</div>
-        <div class="status-badge hidden" id="replayModeBadge" style="background:#132a17; border-color:#2ea043; color:#7ee787;"></div>
         <button class="btn-flip" onclick="toggleBoardFlip()">🔄 Flip Board</button>
         <button class="btn" id="mainMenuButton" style="padding: 6px 14px; font-size: 13px;" onclick="showStartScreen()">Main Menu</button>
       </div>
@@ -598,11 +681,6 @@
         <button class="btn-resign" onclick="resignCurrentGame()">🏳️ Resign</button>
         <button class="btn-draw" id="offerDrawBtn" onclick="offerDraw()" style="display:none;">🤝 Offer Draw</button>
         <button class="online-chat-toggle" id="onlineChatToggle" onclick="toggleOnlineChat()">💬 Chat<span class="chat-unread-dot" id="chatUnreadDot"></span></button>
-      </div>
-      <div class="online-game-controls" id="replayControls">
-        <button class="btn-resign" onclick="replayPrev()">⏮ Prev</button>
-        <button class="btn-draw" id="replayPlayBtn" onclick="toggleReplayPlay()">▶️ Play</button>
-        <button class="btn-resign" onclick="replayNext()">⏭ Next</button>
       </div>
       <div class="board-wrapper">
         <div></div><div class="coord-col" id="coordTop"></div><div></div>
@@ -1423,6 +1501,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
 
   const playlist = [ { name: '🎵 · 01', src: 'bgm1.mp3' }, { name: '🎵 · 02', src: 'bgm2.mp3' }, { name: '🎵 · 03', src: 'bgm3.mp3' } ];
   let isMuted = false, currentVolume = 0.4, audioStarted = false, isFlipped = false, hasViewedTutorial = false, lastActionPos = null;
+  let lastAnimatedActionSig = null; // guards piece/cell animations so they only replay on an actual new move, not every re-render
   let peer = null, peerConn = null, isOnlineHost = false;
   let chatOpen = false, unreadChatCount = 0, onlineGameEndedByAbandonment = false;
   const audioEl = document.getElementById('bgmAudio');
@@ -1441,11 +1520,6 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
       b.classList.toggle('diff-active', b.dataset.diff === aiDifficulty);
     });
   }
-
-  // --- Share / watch (replay) ---
-  let gameActions = [];      // compact action log used to build a shareable link
-  let isReplayMode = false;
-  let replayPlayTimer = null;
 
   function handleFirstUserClick() {
     document.getElementById('clickToStartOverlay').classList.add('hidden');
@@ -1732,192 +1806,6 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     else showToast('Draw offer declined.', 'error');
   }
 
-  // ---------- Share link (encode/decode a compact game record) ----------
-  // Legacy format (JSON -> base64) kept only so old links people already shared keep working.
-  function encodeGameData(obj) {
-    const json = JSON.stringify(obj);
-    const bytes = new TextEncoder().encode(json);
-    let binary = '';
-    bytes.forEach(b => binary += String.fromCharCode(b));
-    return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-  }
-  function decodeGameData(str) {
-    str = str.replace(/-/g,'+').replace(/_/g,'/');
-    while(str.length % 4) str += '=';
-    const binary = atob(str);
-    const bytes = new Uint8Array(binary.length);
-    for(let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
-    return JSON.parse(new TextDecoder().decode(bytes));
-  }
-
-  // Compact format: every board coordinate is a single digit (0-8), so each action packs into
-  // a handful of plain, URL-safe characters instead of a JSON object. No base64 step is needed
-  // at all, which is what made the old links so long (base64 + verbose JSON keys on every move).
-  const SHARE_MODE_CHARS = { pvp:'P', pve:'E', online:'O' };
-  const SHARE_MODE_CHARS_REV = { P:'pvp', E:'pve', O:'online' };
-  const SHARE_DIFF_CHARS = { easy:'e', medium:'m', hard:'h' };
-  const SHARE_DIFF_CHARS_REV = { e:'easy', m:'medium', h:'hard' };
-  const SHARE_PIECE_CHARS = { rock:'r', paper:'p', scissors:'s' };
-  const SHARE_PIECE_CHARS_REV = { r:'rock', p:'paper', s:'scissors' };
-  function encodeCompactGame(payload) {
-    const modeChar = SHARE_MODE_CHARS[payload.mode] || 'P';
-    let out = '2' + modeChar;
-    if(payload.mode === 'pve') out += (SHARE_DIFF_CHARS[payload.difficulty] || 'm');
-    (payload.actions || []).forEach(a => {
-      if(a.t === 'm') out += 'M' + a.fr + a.fc + a.tr + a.tc;
-      else out += 'D' + (SHARE_PIECE_CHARS[a.p] || 'r') + a.r + a.c;
-    });
-    return out;
-  }
-  function decodeCompactGame(str) {
-    if(!str || str[0] !== '2') return null;
-    let i = 1;
-    const mode = SHARE_MODE_CHARS_REV[str[i++]];
-    if(!mode) return null;
-    let difficulty;
-    if(mode === 'pve') difficulty = SHARE_DIFF_CHARS_REV[str[i++]] || 'medium';
-    const actions = [];
-    while(i < str.length) {
-      const t = str[i++];
-      if(t === 'M') {
-        const fr = +str[i++], fc = +str[i++], tr = +str[i++], tc = +str[i++];
-        if([fr,fc,tr,tc].some(n => Number.isNaN(n))) break;
-        actions.push({ t:'m', fr, fc, tr, tc });
-      } else if(t === 'D') {
-        const p = SHARE_PIECE_CHARS_REV[str[i++]] || 'rock';
-        const r = +str[i++], c = +str[i++];
-        if([r,c].some(n => Number.isNaN(n))) break;
-        actions.push({ t:'d', p, r, c });
-      } else break;
-    }
-    return { mode, difficulty, actions };
-  }
-  function modeLabel(mode, difficulty) {
-    if(mode==='pvp') return '👥 Local PVP';
-    if(mode==='pve') return `🤖 PVE · ${difficulty ? difficulty[0].toUpperCase()+difficulty.slice(1) : 'Medium'} Bot`;
-    if(mode==='online') return '🌐 Online Multiplayer';
-    return mode || 'Game';
-  }
-
-  function shareGame() {
-    if(!gameActions.length) { showToast('No moves to share yet', 'error'); return; }
-    const payload = { mode: gameMode, actions: gameActions };
-    if(gameMode==='pve') payload.difficulty = aiDifficulty;
-    let encoded;
-    try { encoded = encodeCompactGame(payload); }
-    catch(e) { showToast('Could not create link', 'error'); return; }
-    const link = `${location.origin}${location.pathname}#w=${encoded}`;
-    document.getElementById('shareModeLabel').textContent = `Anyone with this link can watch this ${modeLabel(gameMode, aiDifficulty)} game.`;
-    document.getElementById('shareLinkInput').value = link;
-    document.getElementById('gameOverScreen').classList.add('hidden');
-    document.getElementById('shareScreen').classList.remove('hidden');
-  }
-  function copyShareLink() {
-    const input = document.getElementById('shareLinkInput');
-    input.select();
-    const done = () => showToast('Link copied', 'success');
-    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(input.value).then(done).catch(() => { document.execCommand('copy'); done(); });
-    else { document.execCommand('copy'); done(); }
-  }
-  function closeShareScreen() { document.getElementById('shareScreen').classList.add('hidden'); }
-
-  // ---------- Watch mode (replay a shared game) ----------
-  function replayApplyAction(a, actor) {
-    if(a.type==='move') {
-      const {r:fr,c:fc}=a.from, {r:tr,c:tc}=a.to, srcP=board[fr][fc], tgtP=board[tr][tc];
-      if(!srcP) return;
-      if(tgtP) hands[actor].push(tgtP.type);
-      board[tr][tc]=srcP; board[fr][fc]=null; lastActionPos={from:{r:fr,c:fc}, to:{r:tr,c:tc}};
-      addLogEntry(actor, `${SYMBOLS[srcP.type]} ${getCoordNotation(fr,fc)} ${getCoordNotation(tr,tc)}`);
-    } else {
-      const {r,c}=a.to; board[r][c]={player:actor, type:a.pieceType};
-      lastActionPos={to:{r,c}};
-      addLogEntry(actor, `${SYMBOLS[a.pieceType]} @ ${getCoordNotation(r,c)}`);
-    }
-  }
-
-  function buildReplayFromActions(actions) {
-    board = Array(9).fill(null).map(() => Array(9).fill(null));
-    hands = { blue: [], red: [] };
-    turn = 'blue'; lastActionPos = null; moveHistory = []; viewHistoryIndex = -1;
-    document.getElementById('moveLogList').innerHTML = '';
-
-    [3,4,5].forEach(c => board[6][c]={player:'blue', type:'scissors'});
-    [3,4,5].forEach(c => board[7][c]={player:'blue', type:'rock'});
-    [3,4,5].forEach(c => board[8][c]={player:'blue', type:'paper'});
-    [3,4,5].forEach(c => board[2][c]={player:'red', type:'scissors'});
-    [3,4,5].forEach(c => board[1][c]={player:'red', type:'rock'});
-    [3,4,5].forEach(c => board[0][c]={player:'red', type:'paper'});
-
-    (actions||[]).forEach(ra => {
-      const actor = turn;
-      const action = ra.t==='m'
-        ? { type:'move', from:{r:ra.fr,c:ra.fc}, to:{r:ra.tr,c:ra.tc} }
-        : { type:'drop', pieceType:ra.p, to:{r:ra.r,c:ra.c} };
-      replayApplyAction(action, actor);
-      turn = turn==='blue' ? 'red' : 'blue';
-    });
-  }
-
-  function loadReplay(payload) {
-    isReplayMode = true;
-    invalidateAIRequest();
-    clearEffects();
-    gameMode = 'replay';
-    gameOver = true; selectedPos = null; selectedHandPiece = null; validMoves = [];
-    hideAllOverlays();
-    buildReplayFromActions(payload.actions || []);
-    viewHistoryIndex = moveHistory.length ? 0 : -1;
-    isFlipped = false; document.getElementById('board').classList.remove('flipped');
-    renderCoordinates();
-    setOnlineControlsVisible(false);
-    updateMainMenuVisibility();
-    const badge = document.getElementById('replayModeBadge');
-    if(badge) { badge.textContent = `👁️ Watching: ${modeLabel(payload.mode, payload.difficulty)}`; badge.classList.remove('hidden'); }
-    const rc = document.getElementById('replayControls');
-    if(rc) rc.classList.add('visible');
-    render();
-    if(!moveHistory.length) showToast('This shared game has no moves', 'error');
-  }
-
-  function replayGoto(idx) {
-    if(!moveHistory.length) return;
-    viewHistoryIndex = Math.max(0, Math.min(moveHistory.length-1, idx));
-    render();
-  }
-  function replayPrev() { stopReplayAutoplay(); replayGoto(viewHistoryIndex - 1); }
-  function replayNext() { stopReplayAutoplay(); replayGoto(viewHistoryIndex + 1); }
-  function toggleReplayPlay() {
-    if(replayPlayTimer) { stopReplayAutoplay(); return; }
-    const btn = document.getElementById('replayPlayBtn'); if(btn) btn.textContent = '⏸ Pause';
-    replayPlayTimer = setInterval(() => {
-      if(viewHistoryIndex >= moveHistory.length - 1) { stopReplayAutoplay(); return; }
-      replayGoto(viewHistoryIndex + 1);
-    }, 1100);
-  }
-  function stopReplayAutoplay() {
-    if(replayPlayTimer) { clearInterval(replayPlayTimer); replayPlayTimer = null; }
-    const btn = document.getElementById('replayPlayBtn'); if(btn) btn.textContent = '▶️ Play';
-  }
-
-  function checkForSharedGame() {
-    const hash = location.hash || '';
-    if(hash.startsWith('#w=')) {
-      try {
-        const payload = decodeCompactGame(hash.slice('#w='.length));
-        if(payload && Array.isArray(payload.actions)) { loadReplay(payload); return true; }
-      } catch(e) { console.error('Invalid share link', e); }
-      return false;
-    }
-    if(hash.startsWith('#watch=')) { // legacy links shared before the shorter format
-      try {
-        const payload = decodeGameData(hash.slice('#watch='.length));
-        if(payload && Array.isArray(payload.actions)) { loadReplay(payload); return true; }
-      } catch(e) { console.error('Invalid share link', e); }
-      return false;
-    }
-    return false;
-  }
 
   function chooseSide(side) { playerSide = side; document.getElementById('sideSelectScreen').classList.add('hidden'); checkTutorialOrStart(); }
   function checkTutorialOrStart() { if(hasViewedTutorial) initGame(); else document.getElementById('tutorialPromptScreen').classList.remove('hidden'); }
@@ -1926,13 +1814,6 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   function closeTutorial() { document.getElementById('tutorialContentScreen').classList.add('hidden'); initGame(); }
   function hideAllOverlays() { document.querySelectorAll('.screen-overlay').forEach(el => el.classList.add('hidden')); }
   function showStartScreen() {
-    stopReplayAutoplay();
-    if(isReplayMode) {
-      isReplayMode = false;
-      const badge = document.getElementById('replayModeBadge'); if(badge) { badge.classList.add('hidden'); badge.textContent=''; }
-      const rc = document.getElementById('replayControls'); if(rc) rc.classList.remove('visible');
-      if(location.hash) { try { history.replaceState(null, '', location.pathname + location.search); } catch(e) {} }
-    }
     invalidateAIRequest(); clearEffects(); document.getElementById('drawOfferScreen').classList.add('hidden'); closeOnlineChat(); clearChatUI(); if(peer) peer.destroy(); peer=null; peerConn=null; gameMode='pvp'; onlineGameEndedByAbandonment=false; setOnlineControlsVisible(false); updateMainMenuVisibility(); hideAllOverlays(); document.getElementById('startScreen').classList.remove('hidden');
   }
 
@@ -2007,7 +1888,6 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     moveHistory = []; viewHistoryIndex = -1;
     drawPositionCounts = new Map();
     quietTurnCount = 0;
-    gameActions = [];
     onlineGameEndedByAbandonment = false;
     closeOnlineChat(); clearChatUI();
     document.getElementById('moveLogList').innerHTML = '';
@@ -2081,17 +1961,15 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     const actP = turn;
     const isCapture = a.type==='move' && !!board[a.to.r][a.to.c];
     const resetsQuietCount = isCapture || a.type==='drop';
-    if(a.type==='move') gameActions.push({t:'m', fr:a.from.r, fc:a.from.c, tr:a.to.r, tc:a.to.c});
-    else gameActions.push({t:'d', p:a.pieceType, r:a.to.r, c:a.to.c});
     if(a.type==='move') {
       const {r:fr,c:fc}=a.from, {r:tr,c:tc}=a.to, srcP=board[fr][fc], tgtP=board[tr][tc];
       if(tgtP) hands[actP].push(tgtP.type);
-      board[tr][tc]=srcP; board[fr][fc]=null; lastActionPos={from:{r:fr,c:fc}, to:{r:tr,c:tc}};
+      board[tr][tc]=srcP; board[fr][fc]=null; lastActionPos={from:{r:fr,c:fc}, to:{r:tr,c:tc}, captured:isCapture};
       addLogEntry(actP, `${SYMBOLS[srcP.type]} ${getCoordNotation(fr,fc)} ${getCoordNotation(tr,tc)}`);
       checkWinOrNext(tr, tc, resetsQuietCount);
     } else {
       const {r,c}=a.to; board[r][c]={player:actP, type:a.pieceType};
-      hands[actP].splice(hands[actP].indexOf(a.pieceType),1); lastActionPos={to:{r,c}};
+      hands[actP].splice(hands[actP].indexOf(a.pieceType),1); lastActionPos={to:{r,c}, captured:false};
       addLogEntry(actP, `${SYMBOLS[a.pieceType]} @ ${getCoordNotation(r,c)}`);
       checkWinOrNext(r, c, resetsQuietCount);
     }
@@ -2202,6 +2080,12 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     const currentTurn = isHistory ? moveHistory[viewHistoryIndex].turn : turn;
     const curLastActionPos = isHistory ? moveHistory[viewHistoryIndex].lastActionPos : lastActionPos;
 
+    // Only play the landing/capture animation when this is a genuinely new action —
+    // render() also runs on plain selection clicks, which must not replay it.
+    const actionSig = curLastActionPos ? JSON.stringify(curLastActionPos) : null;
+    const isNewAction = !!actionSig && actionSig !== lastAnimatedActionSig;
+    lastAnimatedActionSig = actionSig;
+
     const statusEl = document.getElementById('statusBar');
     
     if (isHistory) {
@@ -2244,13 +2128,22 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
         
         if(!isHistory && validMoves.some(m=>m.r===r && m.c===c)) cell.classList.add(selectedHandPiece?'highlight-drop':'highlight-move');
         
+        let isLandingCell = false;
         if(curLastActionPos) {
-          if(curLastActionPos.to && curLastActionPos.to.r===r && curLastActionPos.to.c===c) cell.classList.add('last-action');
+          if(curLastActionPos.to && curLastActionPos.to.r===r && curLastActionPos.to.c===c) { cell.classList.add('last-action'); isLandingCell = true; }
           if(curLastActionPos.from && curLastActionPos.from.r===r && curLastActionPos.from.c===c) cell.classList.add('last-action');
+        }
+        if(isNewAction && isLandingCell) {
+          cell.classList.add('impact');
+          if(curLastActionPos.captured) cell.classList.add('capture');
         }
 
         const p = currentBoard[r][c];
-        if(p) { const el=document.createElement('div'); el.className=`piece ${p.player}`; el.textContent=SYMBOLS[p.type]; cell.appendChild(el); }
+        if(p) {
+          const el=document.createElement('div'); el.className=`piece ${p.player}`; el.textContent=SYMBOLS[p.type];
+          if(isNewAction && isLandingCell) el.classList.add(curLastActionPos.captured ? 'piece-captured' : 'piece-landed');
+          cell.appendChild(el);
+        }
         cell.addEventListener('click', () => handleCellClick(r,c));
         boardEl.appendChild(cell);
       }
@@ -2269,7 +2162,6 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   }
 
   updateDifficultyButtons();
-  checkForSharedGame();
 </script>
 </body>
 </html>
