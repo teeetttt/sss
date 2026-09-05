@@ -800,7 +800,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   function isCapture(st,a){return a.type==='move'&&st.b[idx(a.tr,a.tc)]!==0;}
   function isRecapture(a,lastMove){return !!(a&&lastMove&&a.type==='move'&&lastMove.type==='move'&&a.tr===lastMove.tr&&a.tc===lastMove.tc);}
   function pieceAttackCount(st,r,c,p,t){let n=0;for(let i=0;i<8;i++){const nr=r+DIRS[i][0],nc=c+DIRS[i][1];if(inside(nr,nc)){const q=st.b[idx(nr,nc)];if(q&&pOf(q)!==p&&canEatType(t,tOf(q)))n++;}}return n;}
-  function pieceDefenseCount(st,r,c,p,t){let n=0;for(let i=0;i<8;i++){const nr=r+DIRS[i][0],nc=c+DIRS[i][1];if(inside(nr,nc)){const q=st.b[idx(nr,nc)];if(q&&pOf(q)===p&&canEatType(tOf(q),t))n++;}}return n;}
+  function pieceDefenseCount(st,r,c,p,t){let n=0;for(let i=0;i<8;i++){const nr=r+DIRS[i][0],nc=c+DIRS[i][1];if(inside(nr,nc)){const q=st.b[idx(nr,nc)];if(q&&pOf(q)===p&&canEatType(t,tOf(q)))n++;}}return n;}
   function immediateDropThreats(st,p,t){
     const rows=p==='blue'?[5,6,7,8]:[0,1,2,3];let best=0;
     for(let i=0;i<4;i++)for(let c=0;c<9;c++){const r=rows[i];if(st.b[idx(r,c)]!==0)continue;let s=0;for(let d=0;d<8;d++){const nr=r+DIRS[d][0],nc=c+DIRS[d][1];if(!inside(nr,nc))continue;const q=st.b[idx(nr,nc)];if(q&&pOf(q)!==p&&canEatType(t,tOf(q)))s+=2;else if(q&&pOf(q)===p)s++;}if(forwardDist(r,p)<=1)s+=8;else if(forwardDist(r,p)<=2)s+=3;if(Math.abs(c-4)<=1)s+=2;if(s>best)best=s;}
@@ -827,7 +827,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
       for(let i=0;i<8;i++){
         const nr=r+DIRS[i][0],nc=c+DIRS[i][1];if(!inside(nr,nc))continue;const qcode=st.b[idx(nr,nc)];
         if(!qcode)mobility++;
-        else if(pOf(qcode)===q){friendSupport++;if(canEatType(tOf(qcode),t))defense++;const jr=r+2*DIRS[i][0],jc=c+2*DIRS[i][1];if(inside(jr,jc)){const jq=st.b[idx(jr,jc)];if(!jq||(pOf(jq)!==q&&canEatType(t,tOf(jq)))){mobility++;jumps++;}}}
+        else if(pOf(qcode)===q){friendSupport++;if(canEatType(t,tOf(qcode)))defense++;const jr=r+2*DIRS[i][0],jc=c+2*DIRS[i][1];if(inside(jr,jc)){const jq=st.b[idx(jr,jc)];if(!jq||(pOf(jq)!==q&&canEatType(t,tOf(jq)))){mobility++;jumps++;}}}
         else {if(canEatType(t,tOf(qcode))){mobility++;attacks++;}else{enemyDanger++;blocked++;}}
       }
       const isolated=friendSupport===0;const unsafe=enemyDanger>0&&defense===0;
