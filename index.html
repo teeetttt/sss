@@ -552,6 +552,7 @@
       <p id="shareModeLabel" style="color:#a89a87; margin-bottom: 14px; font-size: 14px;"></p>
       <input type="text" id="shareLinkInput" class="input-field" readonly onclick="this.select()">
       <button class="btn btn-primary" style="width: 100%; margin-bottom: 12px;" onclick="copyShareLink()">📋 Copy Link</button>
+      <button class="btn" style="width: 100%; margin-bottom: 12px; font-size: 14px;" onclick="showStartScreen()">🏠 Main Menu</button>
       <button class="btn" style="width: 100%; font-size: 14px;" onclick="closeShareScreen()">Close</button>
     </div>
   </div>
@@ -1253,14 +1254,26 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     if(!rootActs.length){self.postMessage({requestId,bestAction:null,stats:{depth:0,nodes,score:-MATE,engine:'SSS Titan Engine v9 - Material Guard'}});return;}
     const immediate=winningMoves(st,ai,[]);if(immediate.length){self.postMessage({requestId,bestAction:toExternal(immediate[0]),stats:{depth:1,nodes:1,score:MATE,engine:'SSS Titan Engine v9 - Material Guard'}});return;}
     let bestMove=rootActs[0],bestVal=-Infinity,completedDepth=0,previousScore=0,preferredMove=null,lastCandidates=null;
+    // Reserve a slice of the time budget so a single safety audit can run *after* the deepest
+    // search we manage to complete, rather than interrupting/overwriting mid-search results.
     for(let depth=1;depth<=MAX_DEPTH;depth++){
-      if(Date.now()-searchStart>TIME_LIMIT-80)break;
+      if(Date.now()-searchStart>TIME_LIMIT-900)break;
       try{
         const result=rootSearch(st,ai,depth,completedDepth>=3?previousScore:NaN,preferredMove);
         if(result.move){bestMove=result.move;bestVal=result.score;previousScore=result.score;preferredMove=result.move;lastCandidates=result.candidates;completedDepth=depth;}
-        if(depth>=4&&lastCandidates&&Date.now()-searchStart>TIME_LIMIT-900){const audited=antiBlunderAudit(st,ai,lastCandidates,bestVal,Math.min(4,depth-1));if(audited)bestMove=audited;}
         if(Math.abs(bestVal)>=MATE-100)break;
       }catch(err){if(err&&err.message==='TO')break;throw err;}
+    }
+    // Anti-blunder audit: run exactly once, on the best line the deep search actually found, using
+    // an audit depth that scales with how deep we got (instead of being capped at a fixed shallow
+    // depth). Previously this ran on every iteration once time got short, so on "hard" -- which has
+    // a large time budget and so hits that window on almost every move -- the final pick was being
+    // repeatedly replaced by a much shallower re-check, quietly weakening the bot below what its
+    // own deep search had already found.
+    if(completedDepth>=4 && lastCandidates && Math.abs(bestVal)<MATE-100){
+      const auditBudget=Math.max(4,Math.min(8,completedDepth-2));
+      const audited=antiBlunderAudit(st,ai,lastCandidates,bestVal,auditBudget);
+      if(audited)bestMove=audited;
     }
     // Diversify only after the strongest completed search. This means randomness can never
     // change the tactical search itself; it only chooses among genuinely close opening moves.
@@ -1597,6 +1610,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   }
 
   // ---------- Share link (encode/decode a compact game record) ----------
+  // Legacy format (JSON -> base64) kept only so old links people already shared keep working.
   function encodeGameData(obj) {
     const json = JSON.stringify(obj);
     const bytes = new TextEncoder().encode(json);
@@ -1612,6 +1626,49 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     for(let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
     return JSON.parse(new TextDecoder().decode(bytes));
   }
+
+  // Compact format: every board coordinate is a single digit (0-8), so each action packs into
+  // a handful of plain, URL-safe characters instead of a JSON object. No base64 step is needed
+  // at all, which is what made the old links so long (base64 + verbose JSON keys on every move).
+  const SHARE_MODE_CHARS = { pvp:'P', pve:'E', online:'O' };
+  const SHARE_MODE_CHARS_REV = { P:'pvp', E:'pve', O:'online' };
+  const SHARE_DIFF_CHARS = { easy:'e', medium:'m', hard:'h' };
+  const SHARE_DIFF_CHARS_REV = { e:'easy', m:'medium', h:'hard' };
+  const SHARE_PIECE_CHARS = { rock:'r', paper:'p', scissors:'s' };
+  const SHARE_PIECE_CHARS_REV = { r:'rock', p:'paper', s:'scissors' };
+  function encodeCompactGame(payload) {
+    const modeChar = SHARE_MODE_CHARS[payload.mode] || 'P';
+    let out = '2' + modeChar;
+    if(payload.mode === 'pve') out += (SHARE_DIFF_CHARS[payload.difficulty] || 'm');
+    (payload.actions || []).forEach(a => {
+      if(a.t === 'm') out += 'M' + a.fr + a.fc + a.tr + a.tc;
+      else out += 'D' + (SHARE_PIECE_CHARS[a.p] || 'r') + a.r + a.c;
+    });
+    return out;
+  }
+  function decodeCompactGame(str) {
+    if(!str || str[0] !== '2') return null;
+    let i = 1;
+    const mode = SHARE_MODE_CHARS_REV[str[i++]];
+    if(!mode) return null;
+    let difficulty;
+    if(mode === 'pve') difficulty = SHARE_DIFF_CHARS_REV[str[i++]] || 'medium';
+    const actions = [];
+    while(i < str.length) {
+      const t = str[i++];
+      if(t === 'M') {
+        const fr = +str[i++], fc = +str[i++], tr = +str[i++], tc = +str[i++];
+        if([fr,fc,tr,tc].some(n => Number.isNaN(n))) break;
+        actions.push({ t:'m', fr, fc, tr, tc });
+      } else if(t === 'D') {
+        const p = SHARE_PIECE_CHARS_REV[str[i++]] || 'rock';
+        const r = +str[i++], c = +str[i++];
+        if([r,c].some(n => Number.isNaN(n))) break;
+        actions.push({ t:'d', p, r, c });
+      } else break;
+    }
+    return { mode, difficulty, actions };
+  }
   function modeLabel(mode, difficulty) {
     if(mode==='pvp') return '👥 Local PVP';
     if(mode==='pve') return `🤖 PVE · ${difficulty ? difficulty[0].toUpperCase()+difficulty.slice(1) : 'Medium'} Bot`;
@@ -1621,12 +1678,12 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
 
   function shareGame() {
     if(!gameActions.length) { showToast('No moves to share yet', 'error'); return; }
-    const payload = { v: 1, mode: gameMode, actions: gameActions };
+    const payload = { mode: gameMode, actions: gameActions };
     if(gameMode==='pve') payload.difficulty = aiDifficulty;
     let encoded;
-    try { encoded = encodeGameData(payload); }
+    try { encoded = encodeCompactGame(payload); }
     catch(e) { showToast('Could not create link', 'error'); return; }
-    const link = `${location.origin}${location.pathname}#watch=${encoded}`;
+    const link = `${location.origin}${location.pathname}#w=${encoded}`;
     document.getElementById('shareModeLabel').textContent = `Anyone with this link can watch this ${modeLabel(gameMode, aiDifficulty)} game.`;
     document.getElementById('shareLinkInput').value = link;
     document.getElementById('gameOverScreen').classList.add('hidden');
@@ -1722,11 +1779,20 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
 
   function checkForSharedGame() {
     const hash = location.hash || '';
-    if(!hash.startsWith('#watch=')) return false;
-    try {
-      const payload = decodeGameData(hash.slice('#watch='.length));
-      if(payload && Array.isArray(payload.actions)) { loadReplay(payload); return true; }
-    } catch(e) { console.error('Invalid share link', e); }
+    if(hash.startsWith('#w=')) {
+      try {
+        const payload = decodeCompactGame(hash.slice('#w='.length));
+        if(payload && Array.isArray(payload.actions)) { loadReplay(payload); return true; }
+      } catch(e) { console.error('Invalid share link', e); }
+      return false;
+    }
+    if(hash.startsWith('#watch=')) { // legacy links shared before the shorter format
+      try {
+        const payload = decodeGameData(hash.slice('#watch='.length));
+        if(payload && Array.isArray(payload.actions)) { loadReplay(payload); return true; }
+      } catch(e) { console.error('Invalid share link', e); }
+      return false;
+    }
     return false;
   }
 
