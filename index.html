@@ -1027,10 +1027,13 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     return out.length?out:acts.slice(0,keep);
   }
   function materialCount(st){let n=0;for(let i=0;i<81;i++)if(st.b[i])n++;for(let i=0;i<6;i++)n+=st.h[i];return n;}
+  function searchTimeExceeded(){
+    if(Date.now()-searchStart>TIME_LIMIT){stop=true;throw new Error('TO');}
+  }
   function tacticalMove(st,p,a,enemyWins){return enemyWins>0||a.tr===goal(p)||isCapture(st,a)||(a.type==='move'&&forwardDist(a.tr,p)<=2)||(a.type==='drop'&&forwardDist(a.tr,p)<=1);}
 
   function qsearch(st,p,alpha,beta,ply,qply){
-    if((nodes&1023)===0&&Date.now()-searchStart>TIME_LIMIT){stop=true;throw new Error('TO');}
+    if((nodes&255)===0&&Date.now()-searchStart>TIME_LIMIT){stop=true;throw new Error('TO');}
     nodes++;
     if(ply>=MAX_PLY-4)return evaluate(st,p); // hard recursion-depth guard, see search()
     const enemy0=opp(p);
@@ -1059,7 +1062,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   }
 
   function search(st,p,depth,alpha,beta,ply,lastMove,allowExtension){
-    if((nodes&1023)===0&&Date.now()-searchStart>TIME_LIMIT){stop=true;throw new Error('TO');}
+    if((nodes&255)===0&&Date.now()-searchStart>TIME_LIMIT){stop=true;throw new Error('TO');}
     nodes++;
     // Extensions (check/threat/forcing-reply extensions below) can keep the depth budget from
     // shrinking for many plies in a row during a long forced sequence -- exactly what a
@@ -1100,7 +1103,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
       if(allowExtension&&depth<=12&&depth>=2&&(forcing||recapture||enemyThreatAfter>enemyW||ownThreatAfter>0))extension=1;
       if(allowExtension&&depth<=10&&depth>=4&&a.type==='drop'&&forwardDist(a.tr,p)<=1)extension=1;
       let nextDepth=depth-1+extension,v;
-      const raceCritical=ownThreatAfter>0||enemyThreatAfter>0||enemyThreatAfter!==enemyW;
+      const raceCritical=ownThreatAfter>0||enemyThreatAfter>0||enemyThreatAfter!==enemyW||a.tr===goal(p)||(a.type==='drop'&&forwardDist(a.tr,p)<=1);
       if(i>=6&&depth>=6&&quiet&&!raceCritical){
         let reduction=(i>=18?2:1);if(depth<=7)reduction=1;
         v=-search(st,enemy,Math.max(0,nextDepth-reduction),-alpha-1,-alpha,ply+1,a,extension?false:true);
@@ -1115,6 +1118,8 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   function rootPreviewScore(st,p,a,enemyWins){
     const u=makeMove(st,p,a),enemy=opp(p);
     let ownW=threatCount(st,p,4),oppW=threatCount(st,enemy,4),s=ownW*760000-oppW*980000;
+    if(a.tr===goal(p))s+=MATE;
+    else if(moveIsForcing(st,p,a,enemyWins))s+=42000;
     if(a.type==='move'&&st.b[idx(a.tr,a.tc)]===0){s+=forwardDist(a.tr,p)<=2?18000:0;}
     if(a.type==='drop'){s+=immediateDropThreats(st,p,a.t)*2400;}
     if(enemyWins>0&&oppW===0)s+=520000;
@@ -1173,7 +1178,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     // moves that look attractive by static ordering. This is especially important for quiet blocks.
     if(acts.length>1){
       const n=acts.length,scored=new Array(n);
-      for(let i=0;i<n;i++){const a=acts[i];scored[i]={a,prev:rootPreviewScore(st,p,a,enemyWins),sc:scoreMove(st,p,a,depth,preferredMove,enemyWins,0)};}
+      for(let i=0;i<n;i++){if((i&15)===0)searchTimeExceeded();const a=acts[i];scored[i]={a,prev:rootPreviewScore(st,p,a,enemyWins),sc:scoreMove(st,p,a,depth,preferredMove,enemyWins,0)};}
       scored.sort((x,y)=>((y.prev-x.prev)||0)||(y.sc-x.sc));
       for(let i=0;i<n;i++)acts[i]=scored[i].a;
     }
@@ -1192,6 +1197,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     for(let attempt=0;attempt<3;attempt++){
       let best=-Infinity,bestMove=null,a0=alpha,b0=beta;const candidates=[];
       for(let i=0;i<rootActs.length;i++){
+        if((i&7)===0)searchTimeExceeded();
         const a=rootActs[i],u=makeMove(st,p,a),v=-search(st,enemy,depth-1,-b0,-a0,1,a,true);
         unmakeMove(st,p,u);candidates.push({move:a,score:v,order:i});
         if(v>best){best=v;bestMove=a;}if(v>a0)a0=v;if(a0>=b0)break;
@@ -1208,6 +1214,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
             const refine=Math.min(4,candidates.length);
             for(let i=0;i<refine;i++){
               if(Date.now()-searchStart>=TIME_LIMIT-420)break;
+              searchTimeExceeded();
               const c=candidates[i],u=makeMove(st,p,c.move);
               const rv=-search(st,enemy,depth-1,-MATE,MATE,1,c.move,true);
               unmakeMove(st,p,u);c.score=rv;
@@ -1319,18 +1326,100 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   }`;
 
   const blob = new Blob([workerCode], { type: 'application/javascript' });
-  const aiWorker = new Worker(URL.createObjectURL(blob));
+  let aiWorker = null;
+  let aiWatchdogTimer = null;
+  let aiWorkerUrl = null;
   let aiRequestSerial = 0;
   let activeAIRequest = 0;
-  function invalidateAIRequest() { activeAIRequest = ++aiRequestSerial; }
+
+  function createAIWorker(){
+    if(!aiWorkerUrl) aiWorkerUrl = URL.createObjectURL(blob);
+    const w = new Worker(aiWorkerUrl);
+    w.onmessage = handleAIWorkerMessage;
+    w.onerror = handleAIWorkerError;
+    w.onmessageerror = handleAIWorkerMessageError;
+    return w;
+  }
+
+  function restartAIWorker(){
+    try{ if(aiWorker) aiWorker.terminate(); }catch(e){}
+    aiWorker = createAIWorker();
+  }
+
+  function getFirstLegalAIAction(){
+    if(gameOver || gameMode!=='pve' || turn===playerSide) return null;
+    let p=turn;
+    for(let r=0;r<9;r++) for(let c=0;c<9;c++){
+      const q=board[r][c];
+      if(q && q.player===p){
+        const ms=getValidMoves(r,c);
+        if(ms.length) return {type:'move',from:{r,c},to:{r:ms[0].r,c:ms[0].c}};
+      }
+    }
+    for(const t of ['scissors','rock','paper']){
+      if(hands[p].includes(t)){
+        const ds=(typeof getValidDropPositionsForPlayer==='function') ? getValidDropPositionsForPlayer(p,t) : (p===turn ? getValidDropPositions() : []);
+        if(ds && ds.length) return {type:'drop',pieceType:t,to:{r:ds[0].r,c:ds[0].c}};
+      }
+    }
+    return null;
+  }
+
+  function isLegalAIAction(a){
+    if(!a || gameOver || gameMode!=='pve' || turn===playerSide) return false;
+    if(a.type==='move' && a.from && a.to){
+      const p=board[a.from.r]?.[a.from.c];
+      if(!p || p.player!==turn) return false;
+      return getValidMoves(a.from.r,a.from.c).some(m=>m.r===a.to.r&&m.c===a.to.c);
+    }
+    if(a.type==='drop' && a.to && ['scissors','rock','paper'].includes(a.pieceType)){
+      if(!hands[turn].includes(a.pieceType)) return false;
+      return getValidDropPositions().some(m=>m.r===a.to.r&&m.c===a.to.c);
+    }
+    return false;
+  }
+
+  function clearAIWatchdog(){
+    if(aiWatchdogTimer){clearTimeout(aiWatchdogTimer);aiWatchdogTimer=null;}
+  }
+
+  function scheduleAIWatchdog(requestId){
+    clearAIWatchdog();
+    aiWatchdogTimer=setTimeout(()=>{
+      if(requestId!==activeAIRequest || gameOver || gameMode!=='pve' || turn===playerSide) return;
+      const fallback=getFirstLegalAIAction();
+      if(fallback){
+        invalidateAIRequest();
+        executeAIAction(fallback);
+      }else{
+        restartAIWorker();
+      }
+    }, Math.max(1200, (DIFFICULTY_WATCHDOG_MS[aiDifficulty]||5200)));
+  }
+
+  function invalidateAIRequest() { activeAIRequest = ++aiRequestSerial; clearAIWatchdog(); }
   function shouldApplyAIResult(result, requestId, activeRequest, mode, over, currentTurn, aiSide) {
     return !!result && requestId === activeRequest && mode === 'pve' && !over && currentTurn !== aiSide;
   }
-  aiWorker.onmessage = function(e) {
+  function handleAIWorkerMessage(e) {
     const d = e.data || {};
     if(!shouldApplyAIResult(d.bestAction, d.requestId, activeAIRequest, gameMode, gameOver, turn, playerSide)) return;
-    executeAIAction(d.bestAction);
-  };
+    clearAIWatchdog();
+    const action=isLegalAIAction(d.bestAction) ? d.bestAction : getFirstLegalAIAction();
+    invalidateAIRequest();
+    if(action) executeAIAction(action);
+  }
+  function handleAIWorkerError(){
+    clearAIWatchdog();
+    restartAIWorker();
+    if(gameMode==='pve' && !gameOver && turn!==playerSide) triggerAIMove();
+  }
+  function handleAIWorkerMessageError(){
+    handleAIWorkerError();
+  }
+
+  const DIFFICULTY_WATCHDOG_MS = { easy: 1800, medium: 4000, hard: 7600 };
+  aiWorker = createAIWorker();
 
   const playlist = [ { name: '🎵 · 01', src: 'bgm1.mp3' }, { name: '🎵 · 02', src: 'bgm2.mp3' }, { name: '🎵 · 03', src: 'bgm3.mp3' } ];
   let isMuted = false, currentVolume = 0.4, audioStarted = false, isFlipped = false, hasViewedTutorial = false, lastActionPos = null;
@@ -2044,12 +2133,24 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     if(gameOver || gameMode!=='pve' || turn===playerSide) return;
     const requestId = ++aiRequestSerial;
     activeAIRequest = requestId;
+    scheduleAIWatchdog(requestId);
     const repKey=getDrawPositionKey();
-    aiWorker.postMessage({board, hands, aiPlayer:turn, moveCount:moveHistory.length, rootRepetitionCount:drawPositionCounts.get(repKey)||1, quietTurnCount, openingSeed:pveOpeningSeed, difficulty:aiDifficulty, requestId});
+    try{
+      aiWorker.postMessage({board, hands, aiPlayer:turn, moveCount:moveHistory.length, rootRepetitionCount:drawPositionCounts.get(repKey)||1, quietTurnCount, openingSeed:pveOpeningSeed, difficulty:aiDifficulty, requestId});
+    }catch(e){
+      clearAIWatchdog();
+      restartAIWorker();
+      const fallback=getFirstLegalAIAction();
+      if(fallback){ invalidateAIRequest(); executeAIAction(fallback); }
+    }
   }
-  function executeAIAction(a) { applyActionToBoard(a); }
+  function executeAIAction(a) {
+    if(!isLegalAIAction(a)) a=getFirstLegalAIAction();
+    if(a) applyActionToBoard(a);
+  }
 
   function endDraw(msg) {
+    clearAIWatchdog();
     gameOver = true;
     setOnlineControlsVisible(false);
     clearEffects();
@@ -2062,6 +2163,8 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   }
 
   function endGame(w, msg) {
+    clearAIWatchdog();
+    invalidateAIRequest();
     gameOver = true;
     setOnlineControlsVisible(false);
     render();
