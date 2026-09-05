@@ -499,6 +499,18 @@
     </div>
   </div>
 
+  <div class="screen-overlay hidden" id="difficultySelectScreen">
+    <div class="modal-box">
+      <div class="modal-title">Choose Bot Difficulty</div>
+      <p style="color:#a89a87; margin-bottom: 20px; font-size: 15px;">Pick how strong the AI should play. You can change this any time you start a new PVE game.</p>
+      <div class="btn-group" style="max-width: 100%;">
+        <button class="btn btn-primary" style="width: 100%;" onclick="chooseDifficulty('easy')">🌱 Easy</button>
+        <button class="btn btn-primary" style="width: 100%;" onclick="chooseDifficulty('medium')">⚔️ Medium</button>
+        <button class="btn btn-primary" style="width: 100%;" onclick="chooseDifficulty('hard')">🔥 Hard</button>
+      </div>
+    </div>
+  </div>
+
   <div class="screen-overlay hidden" id="tutorialPromptScreen">
     <div class="modal-box">
       <div class="modal-title">New Here?</div>
@@ -533,6 +545,7 @@
       <p style="color:#a89a87; margin-bottom: 24px; font-size: 16px; font-weight: 600;" id="gameOverMsg"></p>
       <div class="btn-group" style="max-width: 100%;">
         <button class="btn btn-primary" style="width: 100%;" onclick="restartGame()">🔄 Play Again</button>
+        <button class="btn" style="width: 100%;" onclick="shareGameResult()">🔗 Share</button>
         <button class="btn" style="width: 100%;" onclick="showStartScreen()">🏠 Back to Main Menu</button>
       </div>
     </div>
@@ -630,7 +643,10 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   const EMPTY = 0;
   const MATE = 9000000;
   const DRAW = 0;
-  const TIME_LIMIT = 6200;
+  // TIME_LIMIT / MAX_SEARCH_DEPTH are the only levers difficulty adjusts -- they just cap how
+  // long/deep the existing iterative-deepening alpha-beta search is allowed to run each move.
+  let TIME_LIMIT = 6200;
+  let MAX_SEARCH_DEPTH = 50;
   const MAX_PLY = 128;
   const Q_MAX = 10;
 
@@ -1208,6 +1224,8 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   self.onmessage=function(e){
     const d=e.data||{};if(!d.board||!d.hands||!d.aiPlayer)return;
     const requestId=d.requestId;
+    TIME_LIMIT=Number(d.timeLimit)>0?Number(d.timeLimit):6200;
+    MAX_SEARCH_DEPTH=Number(d.maxDepth)>0?Number(d.maxDepth):50;
     const st=fromInput(d.board,d.hands,d.quietTurnCount||0),ai=d.aiPlayer;
     if((d.moveCount||0)===0){clearTT();for(let i=0;i<killers.length;i++){killers[i][0]=null;killers[i][1]=null;killers[i][2]=null;}moveHistory.fill(0);dropHistory.fill(0);}
     else{for(let i=0;i<moveHistory.length;i++)moveHistory[i]>>=1;for(let i=0;i<dropHistory.length;i++)dropHistory[i]>>=1;}
@@ -1219,7 +1237,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     if(!rootActs.length){self.postMessage({requestId,bestAction:null,stats:{depth:0,nodes,score:-MATE,engine:'SSS Titan Engine v9 - Material Guard'}});return;}
     const immediate=winningMoves(st,ai,[]);if(immediate.length){self.postMessage({requestId,bestAction:toExternal(immediate[0]),stats:{depth:1,nodes:1,score:MATE,engine:'SSS Titan Engine v9 - Material Guard'}});return;}
     let bestMove=rootActs[0],bestVal=-Infinity,completedDepth=0,previousScore=0,preferredMove=null,lastCandidates=null;
-    for(let depth=1;depth<=50;depth++){
+    for(let depth=1;depth<=MAX_SEARCH_DEPTH;depth++){
       if(Date.now()-searchStart>TIME_LIMIT-80)break;
       try{
         const result=rootSearch(st,ai,depth,completedDepth>=3?previousScore:NaN,preferredMove);
@@ -1294,9 +1312,24 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   const SYMBOLS = { scissors: '✂️', rock: '🪨', paper: '📄' }, COLS = ['A','B','C','D','E','F','G','H','I'], ROWS = ['9','8','7','6','5','4','3','2','1'];
   let gameMode = 'pvp', playerSide = 'blue', turn = 'blue', board = [], hands = {blue:[], red:[]}, selectedPos = null, selectedHandPiece = null, validMoves = [], gameOver = false;
 
+  // Difficulty only tunes the AI worker's search time/depth budget below -- it never touches
+  // the evaluation function, move ordering, or alpha-beta pruning logic itself.
+  let aiDifficulty = 'hard';
+  const AI_DIFFICULTY_SETTINGS = {
+    easy:   { label: 'Easy',   timeLimit: 500,  maxDepth: 4 },
+    medium: { label: 'Medium', timeLimit: 1800, maxDepth: 9 },
+    hard:   { label: 'Hard',   timeLimit: 6200, maxDepth: 50 }
+  };
+
+  function chooseDifficulty(level) {
+    aiDifficulty = AI_DIFFICULTY_SETTINGS[level] ? level : 'hard';
+    document.getElementById('difficultySelectScreen').classList.add('hidden');
+    document.getElementById('sideSelectScreen').classList.remove('hidden');
+  }
+
   function selectMode(mode) {
     gameMode = mode; clearEffects(); hideAllOverlays(); updateMainMenuVisibility();
-    if(mode==='pve') document.getElementById('sideSelectScreen').classList.remove('hidden');
+    if(mode==='pve') document.getElementById('difficultySelectScreen').classList.remove('hidden');
     else { playerSide='blue'; checkTutorialOrStart(); }
   }
 
@@ -1473,6 +1506,43 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     requestAnimationFrame(() => el.classList.add('show'));
     clearTimeout(showToast.timer);
     showToast.timer = setTimeout(() => el.classList.remove('show'), 1800);
+  }
+
+  function getShareModeLabel() {
+    if(gameMode==='pvp') return 'Local PVP';
+    if(gameMode==='online') return 'Online Multiplayer';
+    if(gameMode==='pve') {
+      const diff = AI_DIFFICULTY_SETTINGS[aiDifficulty] || AI_DIFFICULTY_SETTINGS.hard;
+      return `PVE (${diff.label} Bot)`;
+    }
+    return 'a match';
+  }
+
+  function shareGameResult() {
+    const modeLabel = getShareModeLabel();
+    const resultText = (document.getElementById('gameOverTitle').textContent || 'Game Over').trim();
+    const shareUrl = window.location.origin + window.location.pathname;
+    const shareTitle = 'SSS - Shear, Sheet, Stone';
+    const shareText = `I just played ${modeLabel} on SSS (Shear · Sheet · Stone) — ${resultText} Come play:`;
+
+    if(navigator.share) {
+      navigator.share({ title: shareTitle, text: shareText, url: shareUrl }).catch(() => {});
+      return;
+    }
+
+    const fullText = `${shareText} ${shareUrl}`;
+    const done = () => showToast('Share link copied', 'success');
+    if(navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(fullText).then(done).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = fullText; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta); done();
+      });
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = fullText; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta); done();
+    }
   }
 
   function copyRoomCode() {
@@ -1751,7 +1821,8 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     const requestId = ++aiRequestSerial;
     activeAIRequest = requestId;
     const repKey=getDrawPositionKey();
-    aiWorker.postMessage({board, hands, aiPlayer:turn, moveCount:moveHistory.length, rootRepetitionCount:drawPositionCounts.get(repKey)||1, quietTurnCount, openingSeed:pveOpeningSeed, requestId});
+    const diff = AI_DIFFICULTY_SETTINGS[aiDifficulty] || AI_DIFFICULTY_SETTINGS.hard;
+    aiWorker.postMessage({board, hands, aiPlayer:turn, moveCount:moveHistory.length, rootRepetitionCount:drawPositionCounts.get(repKey)||1, quietTurnCount, openingSeed:pveOpeningSeed, requestId, timeLimit: diff.timeLimit, maxDepth: diff.maxDepth});
   }
   function executeAIAction(a) { applyActionToBoard(a); }
 
