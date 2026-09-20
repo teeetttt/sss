@@ -165,6 +165,65 @@
     .btn-primary:hover { box-shadow: 0 10px 26px rgba(217, 167, 92, 0.35); }
     .btn-red { background: linear-gradient(135deg, var(--c-rose) 0%, var(--c-rose-bright) 100%); border: none; color: #2a120e; }
     .btn-red:hover { box-shadow: 0 10px 26px rgba(193, 95, 82, 0.35); }
+    .btn-analyse { background: linear-gradient(135deg, #6e5bc4 0%, #9384d9 100%); border: none; color: #f5f2ff; box-shadow: 0 8px 22px rgba(110, 91, 196, 0.28); }
+    .btn-analyse:hover { box-shadow: 0 10px 26px rgba(110, 91, 196, 0.4); }
+
+    /* ---------- Analysis mode ---------- */
+    .quality-badge { font-size: 10px; font-weight: 800; letter-spacing: 0.4px; padding: 3px 7px; border-radius: 20px; white-space: nowrap; margin-left: 8px; flex-shrink: 0; }
+    .quality-badge.q-best { background: rgba(122, 156, 110, 0.25); color: var(--c-sage-bright); }
+    .quality-badge.q-good { background: rgba(91, 143, 196, 0.22); color: var(--c-sky-bright); }
+    .quality-badge.q-mid { background: rgba(217, 167, 92, 0.22); color: var(--c-gold-bright); }
+    .quality-badge.q-inacc { background: rgba(217, 130, 60, 0.24); color: #e6a25c; }
+    .quality-badge.q-mistake { background: rgba(193, 122, 82, 0.28); color: var(--c-clay-bright); }
+    .quality-badge.q-blunder { background: rgba(193, 95, 82, 0.32); color: var(--c-rose-bright); }
+
+    /* Compact chess-style move-quality mark shown on the moved/dropped piece in analysis mode. */
+    .move-quality-symbol {
+      position: absolute;
+      right: -5px;
+      bottom: -5px;
+      z-index: 3;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 2px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      line-height: 1;
+      font-weight: 900;
+      letter-spacing: -0.4px;
+      background: rgba(25, 19, 14, 0.92);
+      border: 1px solid rgba(238, 222, 197, 0.2);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+      pointer-events: none;
+      user-select: none;
+      transform: rotate(var(--flip-deg, 0deg));
+    }
+    .move-quality-symbol.q-best { color: var(--c-sage-bright); border-color: rgba(148, 181, 133, 0.42); }
+    .move-quality-symbol.q-good { color: var(--c-sky-bright); border-color: rgba(122, 168, 214, 0.4); }
+    .move-quality-symbol.q-mid { color: var(--c-gold-bright); border-color: rgba(232, 189, 122, 0.42); }
+    .move-quality-symbol.q-inacc { color: #e6a25c; border-color: rgba(230, 162, 92, 0.42); }
+    .move-quality-symbol.q-mistake { color: var(--c-clay-bright); border-color: rgba(217, 154, 112, 0.44); }
+    .move-quality-symbol.q-blunder { color: var(--c-rose-bright); border-color: rgba(217, 126, 110, 0.48); }
+
+    .analysis-panel { display: none; width: 100%; max-width: 620px; justify-content: center; }
+    .analysis-panel.visible { display: flex; }
+    .analysis-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; background: var(--c-surface); border: 1px solid var(--c-panel-border); border-radius: 24px; padding: 8px 16px; }
+    #analysisEvalText { font-size: 13px; font-weight: 700; color: var(--c-text); min-width: 90px; text-align: center; }
+
+    .board { position: relative; }
+    .best-move-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 6; overflow: visible; }
+    .best-move-overlay.hidden { display: none; }
+
+    .pgn-textarea { width: 100%; min-height: 130px; resize: vertical; font-family: 'Courier New', monospace; font-size: 13px; text-align: left; letter-spacing: 0; line-height: 1.5; }
+    .pgn-error { color: var(--c-rose-bright); font-size: 13px; margin-top: -6px; margin-bottom: 12px; text-align: left; }
+
+    @media (max-width: 768px) {
+      .analysis-row { width: 100%; max-width: calc(100vw - 40px); justify-content: space-between; }
+      .quality-badge { font-size: 9px; padding: 2px 6px; }
+    }
     .btn.diff-active { border-color: var(--c-gold); background: rgba(217, 167, 92, 0.18); box-shadow: 0 0 0 3px rgba(217, 167, 92, 0.14); color: #f7ecd9; }
 
     .modal-box {
@@ -557,6 +616,44 @@
       <button class="btn btn-pvp" onclick="selectMode('pvp')">👥 Local PVP</button>
       <button class="btn btn-pve" onclick="selectMode('pve')">🤖 PVE</button>
       <button class="btn btn-online" onclick="showOnlineMenu()">🌐 Play Online</button>
+      <button class="btn btn-analyse" onclick="openAnalyseMenu()">🔍 Analyse Game</button>
+    </div>
+  </div>
+
+  <div class="screen-overlay hidden" id="analyseMenuScreen">
+    <div class="modal-box">
+      <div class="modal-title">Analyse a Game</div>
+      <p style="color:#a89a87; margin-bottom: 22px; font-size: 15px;">Review move quality, best-move arrows, and engine feedback move by move.</p>
+      <div class="btn-group" style="max-width: 100%;">
+        <button class="btn btn-primary" style="width: 100%;" onclick="openImportPgnScreen()">📋 Import PGN</button>
+        <button class="btn btn-pve" style="width: 100%;" onclick="startSelfAnalysis()">♟️ Analyse My Own Game</button>
+        <button class="btn" style="width: 100%; font-size: 14px;" onclick="showStartScreen()">⬅️ Back</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen-overlay hidden" id="importPgnScreen">
+    <div class="modal-box" style="max-width: 560px;">
+      <div class="modal-title">Import PGN</div>
+      <p style="color:#a89a87; margin-bottom: 12px; font-size: 14px; text-align: left;">Paste a game exported from SSS (Export PGN button after any game) and it will be replayed with full analysis.</p>
+      <textarea id="pgnImportInput" class="input-field pgn-textarea" placeholder="1. BSe6-e5 RRc3-c4 2. ..."></textarea>
+      <div id="pgnImportError" class="pgn-error hidden"></div>
+      <div class="btn-group" style="max-width: 100%; flex-direction: row;">
+        <button class="btn btn-primary" style="flex: 1;" onclick="submitImportedPGN()">▶️ Analyse</button>
+        <button class="btn" style="flex: 1; font-size: 14px;" onclick="showStartScreen()">⬅️ Back</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen-overlay hidden" id="exportPgnScreen" style="z-index: 2200;">
+    <div class="modal-box" style="max-width: 560px;">
+      <div class="modal-title">Export PGN</div>
+      <p style="color:#a89a87; margin-bottom: 12px; font-size: 14px; text-align:left;">Copy this and paste it into "Import PGN" later to review the game.</p>
+      <textarea id="pgnExportOutput" class="input-field pgn-textarea" readonly></textarea>
+      <div class="btn-group" style="max-width: 100%; flex-direction: row;">
+        <button class="btn btn-primary" style="flex: 1;" onclick="copyExportedPGN()">📋 Copy</button>
+        <button class="btn" style="flex: 1;" onclick="document.getElementById('exportPgnScreen').classList.add('hidden')">Close</button>
+      </div>
     </div>
   </div>
 
@@ -636,6 +733,7 @@
       <p style="color:#a89a87; margin-bottom: 24px; font-size: 16px; font-weight: 600;" id="gameOverMsg"></p>
       <div class="btn-group" style="max-width: 100%;">
         <button class="btn btn-primary" style="width: 100%;" onclick="restartGame()">🔄 Play Again</button>
+        <button class="btn" style="width: 100%;" onclick="openExportPGN()">📤 Export PGN</button>
         <button class="btn" style="width: 100%;" onclick="showStartScreen()">🏠 Back to Main Menu</button>
       </div>
     </div>
@@ -682,10 +780,20 @@
         <button class="btn-draw" id="offerDrawBtn" onclick="offerDraw()" style="display:none;">🤝 Offer Draw</button>
         <button class="online-chat-toggle" id="onlineChatToggle" onclick="toggleOnlineChat()">💬 Chat<span class="chat-unread-dot" id="chatUnreadDot"></span></button>
       </div>
+      <div class="analysis-panel" id="analysisPanel">
+        <div class="analysis-row">
+          <span id="analysisEvalText">Evaluating…</span>
+          <button class="btn-flip" id="toggleBestMoveBtn" onclick="toggleBestMoveOverlay()">💡 Best Move: ON</button>
+          <button class="btn-flip" onclick="openExportPGN()">📤 Export PGN</button>
+        </div>
+      </div>
       <div class="board-wrapper">
         <div></div><div class="coord-col" id="coordTop"></div><div></div>
         <div class="coord-row" id="coordLeft"></div>
-        <div class="board" id="board"></div>
+        <div style="position: relative;">
+          <div class="board" id="board"></div>
+          <svg class="best-move-overlay hidden" id="bestMoveOverlay" viewBox="0 0 9 9" preserveAspectRatio="none"></svg>
+        </div>
         <div class="coord-row" id="coordRight"></div>
         <div></div><div class="coord-col" id="coordBottom"></div><div></div>
       </div>
@@ -1424,6 +1532,36 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     aiWorker = createAIWorker();
   }
 
+  // --- Analysis engine: a separate worker instance so background evaluation never
+  // interferes with a live PVE opponent search on the main aiWorker. ---
+  function ensureAnalysisWorker(){
+    if(analysisWorker) return;
+    if(!aiWorkerUrl) aiWorkerUrl = URL.createObjectURL(blob);
+    analysisWorker = new Worker(aiWorkerUrl);
+    analysisWorker.onmessage = (e) => {
+      const d = e.data || {};
+      const resolve = evalMap[d.requestId];
+      if(resolve){ delete evalMap[d.requestId]; resolve(d); }
+    };
+    analysisWorker.onerror = () => {
+      // Fail every pending evaluation rather than leaving analysis stuck forever.
+      Object.keys(evalMap).forEach(id => { const r=evalMap[id]; delete evalMap[id]; r({bestAction:null, stats:{score:0}}); });
+    };
+  }
+  function evaluatePosition(b, h, side, moveCount, quiet) {
+    ensureAnalysisWorker();
+    return new Promise(resolve => {
+      const id = ++evalSerial;
+      evalMap[id] = resolve;
+      try {
+        analysisWorker.postMessage({ board: b, hands: h, aiPlayer: side, moveCount, rootRepetitionCount: 1, quietTurnCount: quiet, openingSeed: 0, difficulty: 'medium', requestId: id });
+      } catch (e) {
+        delete evalMap[id];
+        resolve({ bestAction: null, stats: { score: 0 } });
+      }
+    });
+  }
+
   function getFirstLegalAIAction(){
     if(gameOver || gameMode!=='pve' || turn===playerSide) return null;
     let p=turn;
@@ -1511,6 +1649,19 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   let viewHistoryIndex = -1;
   let drawPositionCounts = new Map();
   let quietTurnCount = 0;
+
+  // --- Analysis mode (move quality, best-move arrows, PGN import/export) ---
+  let analysisMode = false;
+  let showBestMoveOverlay = true;
+  let currentBestMove = null;
+  let priorEval = null;
+  let analysisSeq = 0;
+  let analysisGameEndText = '';
+  let moveQuality = [];
+  let actionLog = [];
+  let analysisWorker = null;
+  let evalSerial = 0;
+  let evalMap = {};
 
   // --- Bot difficulty (PVE only) ---
   let aiDifficulty = 'medium';
@@ -1815,6 +1966,8 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   function hideAllOverlays() { document.querySelectorAll('.screen-overlay').forEach(el => el.classList.add('hidden')); }
   function showStartScreen() {
     invalidateAIRequest(); clearEffects(); document.getElementById('drawOfferScreen').classList.add('hidden'); closeOnlineChat(); clearChatUI(); if(peer) peer.destroy(); peer=null; peerConn=null; gameMode='pvp'; onlineGameEndedByAbandonment=false; setOnlineControlsVisible(false); updateMainMenuVisibility(); hideAllOverlays(); document.getElementById('startScreen').classList.remove('hidden');
+    analysisMode = false; priorEval = null; currentBestMove = null; analysisGameEndText = ''; analysisSeq++;
+    document.getElementById('analysisPanel').classList.remove('visible');
   }
 
   function canEat(a, d) { return (a==='scissors'&&d==='paper')||(a==='paper'&&d==='rock')||(a==='rock'&&d==='scissors'); }
@@ -1877,6 +2030,188 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     l.innerHTML = dr.map(x=>`<span>${x}</span>`).join(''); r.innerHTML = dr.map(x=>`<span>${x}</span>`).join('');
   }
 
+  // ================= ANALYSIS MODE =================
+  // Move quality: we evaluate the position (from the mover's perspective) BEFORE a move,
+  // then evaluate the resulting position (from the opponent's perspective) AFTER it. The
+  // opponent's best achievable score, negated, approximates the mover's realized value —
+  // comparing that to what the mover could ideally have achieved gives the "loss" caused
+  // by the move actually played.
+  function classifyMoveQuality(diff) {
+    if (diff <= 60) return { label: 'Best', cls: 'best', symbol: '★' };
+    if (diff <= 300) return { label: 'Good', cls: 'good', symbol: '+' };
+    if (diff <= 800) return { label: 'Mid', cls: 'mid', symbol: '~' };
+    // Keep the existing "Inaccuracy" label, but use the requested mid-quality symbol.
+    if (diff <= 2000) return { label: 'Inaccuracy', cls: 'inacc', symbol: '~' };
+    if (diff <= 6000) return { label: 'Mistake', cls: 'mistake', symbol: '?' };
+    return { label: 'Blunder', cls: 'blunder', symbol: '??' };
+  }
+  function classifyLastMove(prior, curr) {
+    const plyIdx = moveHistory.length - 1;
+    if (plyIdx < 0) return;
+    const idealForMover = (prior.stats && typeof prior.stats.score === 'number') ? prior.stats.score : 0;
+    const currentScore = (curr.stats && typeof curr.stats.score === 'number') ? curr.stats.score : 0;
+    const mover = actionLog[plyIdx] && actionLog[plyIdx].player;
+    // Normal moves flip `turn`, while a breakthrough win ends the game before the flip.
+    // Convert the post-move score back to the mover's perspective in either case.
+    const actualForMover = mover && turn === mover ? currentScore : -currentScore;
+    let diff = idealForMover - actualForMover;
+    if (!isFinite(diff)) diff = 0;
+    diff = Math.max(0, diff);
+    const q = classifyMoveQuality(diff);
+    moveQuality[plyIdx] = q;
+    const items = document.querySelectorAll('#moveLogList .log-item');
+    const el = items[plyIdx];
+    if (el && !el.querySelector('.quality-badge')) {
+      const badge = document.createElement('span');
+      badge.className = `quality-badge q-${q.cls}`;
+      badge.textContent = q.label;
+      el.appendChild(badge);
+    }
+  }
+  function formatEvalText(score, side) {
+    const cp = (score / 100).toFixed(1);
+    return `${side === 'blue' ? '🔵' : '🔴'} to move · eval ${score > 0 ? '+' : ''}${cp}`;
+  }
+  function setAnalysisStatus(t) {
+    const el = document.getElementById('analysisEvalText');
+    if (el) el.textContent = t;
+  }
+  async function refreshAnalysis(allowGameOver = false) {
+    if (!analysisMode) return;
+    if (gameOver && !allowGameOver) { currentBestMove = null; drawBestMoveOverlay(); return; }
+    const mySeq = ++analysisSeq;
+    if (!gameOver) setAnalysisStatus('Thinking…');
+    const result = await evaluatePosition(deepCopyBoard(board), deepCopyHands(hands), turn, moveHistory.length, quietTurnCount);
+    if (mySeq !== analysisSeq) return; // a newer position has since been requested
+    if (priorEval) classifyLastMove(priorEval, result);
+    priorEval = result;
+    currentBestMove = gameOver ? null : result.bestAction;
+    drawBestMoveOverlay();
+    if (gameOver) {
+      setAnalysisStatus(analysisGameEndText || 'Game over');
+    } else {
+      const score = (result.stats && typeof result.stats.score === 'number') ? result.stats.score : 0;
+      setAnalysisStatus(formatEvalText(score, turn));
+    }
+    render();
+  }
+  function toggleBestMoveOverlay() {
+    showBestMoveOverlay = !showBestMoveOverlay;
+    const btn = document.getElementById('toggleBestMoveBtn');
+    if (btn) btn.textContent = `💡 Best Move: ${showBestMoveOverlay ? 'ON' : 'OFF'}`;
+    drawBestMoveOverlay();
+  }
+  function drawBestMoveOverlay() {
+    const svg = document.getElementById('bestMoveOverlay');
+    if (!svg) return;
+    if (!analysisMode || !showBestMoveOverlay || !currentBestMove || gameOver || viewHistoryIndex !== -1) {
+      svg.innerHTML = ''; svg.classList.add('hidden'); return;
+    }
+    svg.classList.remove('hidden');
+    const a = currentBestMove;
+    let html = '<defs><marker id="bestMoveArrowHead" markerWidth="3" markerHeight="3" refX="1.6" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill="#8fe3a8"/></marker></defs>';
+    if (a.type === 'move') {
+      const x1 = a.from.c + 0.5, y1 = a.from.r + 0.5, x2 = a.to.c + 0.5, y2 = a.to.r + 0.5;
+      html += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#8fe3a8" stroke-width="0.16" stroke-linecap="round" opacity="0.88" marker-end="url(#bestMoveArrowHead)"/>`;
+    } else if (a.type === 'drop') {
+      const x = a.to.c + 0.5, y = a.to.r + 0.5;
+      html += `<circle cx="${x}" cy="${y}" r="0.4" fill="none" stroke="#8fe3a8" stroke-width="0.1" stroke-dasharray="0.16,0.1" opacity="0.85">
+        <animate attributeName="r" values="0.3;0.46;0.3" dur="1.3s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.9;0.45;0.9" dur="1.3s" repeatCount="indefinite"/>
+      </circle>
+      <text x="${x}" y="${y + 0.16}" font-size="0.5" text-anchor="middle" opacity="0.55">${SYMBOLS[a.pieceType] || ''}</text>`;
+    }
+    svg.innerHTML = html;
+  }
+
+  // ---------- PGN-style import / export (SSS's own coordinate notation) ----------
+  const PGN_PIECE_LETTER = { rock: 'R', paper: 'P', scissors: 'S' };
+  const PGN_LETTER_PIECE = { R: 'rock', P: 'paper', S: 'scissors' };
+  function coordToRC(s) { return { c: COLS.indexOf(s[0].toUpperCase()), r: ROWS.indexOf(s[1]) }; }
+  function generatePGNText() {
+    if (!actionLog.length) return '';
+    let out = [], line = '', num = 1;
+    actionLog.forEach(a => {
+      const col = a.player === 'blue' ? 'B' : 'R';
+      const letter = PGN_PIECE_LETTER[a.pieceType];
+      const tok = a.type === 'move'
+        ? `${col}${letter}${getCoordNotation(a.from.r, a.from.c)}-${getCoordNotation(a.to.r, a.to.c)}${a.captured ? 'x' : ''}`
+        : `${col}${letter}@${getCoordNotation(a.to.r, a.to.c)}`;
+      if (a.player === 'blue') { line = `${num}. ${tok}`; }
+      else { line += ` ${tok}`; out.push(line); line = ''; num++; }
+    });
+    if (line) out.push(line);
+    return out.join(' ');
+  }
+  function parseImportedPGN(text) {
+    const tokens = (text || '').trim().split(/\s+/).filter(t => t && !/^\d+\.$/.test(t));
+    if (!tokens.length) throw new Error('no moves found');
+    const actions = [];
+    tokens.forEach(tokRaw => {
+      const tok = tokRaw.replace(/x$/, '');
+      const m = tok.match(/^([BR])([RPS])(?:([A-I][1-9])-([A-I][1-9])|@([A-I][1-9]))$/i);
+      if (!m) throw new Error(`unrecognised move "${tokRaw}"`);
+      const pieceType = PGN_LETTER_PIECE[m[2].toUpperCase()];
+      if (m[3] && m[4]) actions.push({ type: 'move', from: coordToRC(m[3]), to: coordToRC(m[4]) });
+      else actions.push({ type: 'drop', pieceType, to: coordToRC(m[5]) });
+    });
+    return actions;
+  }
+  function openExportPGN() {
+    const ta = document.getElementById('pgnExportOutput');
+    ta.value = generatePGNText() || '(no moves played yet)';
+    document.getElementById('exportPgnScreen').classList.remove('hidden');
+  }
+  function copyExportedPGN() {
+    const ta = document.getElementById('pgnExportOutput');
+    ta.select(); ta.setSelectionRange(0, 999999);
+    try { document.execCommand('copy'); showToast('PGN copied!', 'success'); }
+    catch (e) { showToast('Copy failed — select the text and copy manually.', 'error'); }
+  }
+  function openAnalyseMenu() { hideAllOverlays(); document.getElementById('analyseMenuScreen').classList.remove('hidden'); }
+  function openImportPgnScreen() {
+    hideAllOverlays();
+    document.getElementById('pgnImportInput').value = '';
+    document.getElementById('pgnImportError').classList.add('hidden');
+    document.getElementById('importPgnScreen').classList.remove('hidden');
+  }
+  function startSelfAnalysis() {
+    analysisMode = true; gameMode = 'pvp'; playerSide = 'blue';
+    hideAllOverlays(); updateMainMenuVisibility(); checkTutorialOrStart();
+  }
+  async function submitImportedPGN() {
+    const text = document.getElementById('pgnImportInput').value;
+    const errEl = document.getElementById('pgnImportError');
+    let actions;
+    try { actions = parseImportedPGN(text); }
+    catch (e) { errEl.textContent = 'Could not parse PGN: ' + e.message; errEl.classList.remove('hidden'); return; }
+    errEl.classList.add('hidden');
+    analysisMode = true; gameMode = 'pvp'; playerSide = 'blue'; hasViewedTutorial = true;
+    hideAllOverlays(); updateMainMenuVisibility();
+    initGame();
+    await replayImportedGame(actions);
+  }
+  async function replayImportedGame(actions) {
+    for (const act of actions) {
+      if (gameOver) break;
+      await refreshAnalysis(); // evaluate the position that exists before this move is played
+      let ok = false;
+      if (act.type === 'move') {
+        const p = board[act.from.r] && board[act.from.r][act.from.c];
+        if (p && p.player === turn && getValidMoves(act.from.r, act.from.c).some(m => m.r === act.to.r && m.c === act.to.c)) {
+          applyActionToBoard(act); ok = true;
+        }
+      } else {
+        if (hands[turn].includes(act.pieceType) && getValidDropPositions().some(m => m.r === act.to.r && m.c === act.to.c)) {
+          applyActionToBoard({ type: 'drop', pieceType: act.pieceType, to: act.to }); ok = true;
+        }
+      }
+      if (!ok) { showCustomAlert('The imported PGN contains an illegal move — stopped analysis at that point.', 'Import Warning'); break; }
+      render();
+    }
+    if (!gameOver) await refreshAnalysis();
+  }
+
   function initGame() {
     invalidateAIRequest();
     clearEffects();
@@ -1892,6 +2227,11 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     closeOnlineChat(); clearChatUI();
     document.getElementById('moveLogList').innerHTML = '';
 
+    actionLog = []; moveQuality = []; priorEval = null; currentBestMove = null; analysisGameEndText = ''; analysisSeq++;
+    document.getElementById('analysisPanel').classList.toggle('visible', analysisMode);
+    if(analysisMode){ showBestMoveOverlay = true; const btn=document.getElementById('toggleBestMoveBtn'); if(btn) btn.textContent='💡 Best Move: ON'; }
+    drawBestMoveOverlay();
+
     if((gameMode==='pve'&&playerSide==='red') || (gameMode==='online'&&playerSide==='red')) { isFlipped = true; document.getElementById('board').classList.add('flipped'); }
     else { isFlipped = false; document.getElementById('board').classList.remove('flipped'); }
 
@@ -1906,6 +2246,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     updateMainMenuVisibility();
     setOnlineControlsVisible((gameMode==='pve') || (gameMode==='online' && !!peerConn && !!peerConn.open));
     if(gameMode==='pve' && playerSide==='red') triggerAIMove();
+    if(analysisMode) refreshAnalysis();
   }
 
   function getValidMoves(r, c, b=board, t=turn) {
@@ -1965,11 +2306,13 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
       const {r:fr,c:fc}=a.from, {r:tr,c:tc}=a.to, srcP=board[fr][fc], tgtP=board[tr][tc];
       if(tgtP) hands[actP].push(tgtP.type);
       board[tr][tc]=srcP; board[fr][fc]=null; lastActionPos={from:{r:fr,c:fc}, to:{r:tr,c:tc}, captured:isCapture};
+      actionLog.push({type:'move', player:actP, pieceType:srcP.type, from:{r:fr,c:fc}, to:{r:tr,c:tc}, captured:isCapture});
       addLogEntry(actP, `${SYMBOLS[srcP.type]} ${getCoordNotation(fr,fc)} ${getCoordNotation(tr,tc)}`);
       checkWinOrNext(tr, tc, resetsQuietCount);
     } else {
       const {r,c}=a.to; board[r][c]={player:actP, type:a.pieceType};
       hands[actP].splice(hands[actP].indexOf(a.pieceType),1); lastActionPos={to:{r,c}, captured:false};
+      actionLog.push({type:'drop', player:actP, pieceType:a.pieceType, to:{r,c}});
       addLogEntry(actP, `${SYMBOLS[a.pieceType]} @ ${getCoordNotation(r,c)}`);
       checkWinOrNext(r, c, resetsQuietCount);
     }
@@ -2004,6 +2347,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     if(!hasMove) return endGame(turn==='blue'?'red':'blue', `${turn==='blue'?'Blue':'Red'} has no legal moves. ${turn==='blue'?'Red':'Blue'} wins!`);
     if(checkDrawRules()) return;
     render();
+    if(analysisMode) refreshAnalysis();
     if(!gameOver && gameMode==='pve' && turn!==playerSide) triggerAIMove();
   }
 
@@ -2032,6 +2376,16 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     gameOver = true;
     setOnlineControlsVisible(false);
     clearEffects();
+
+    if (analysisMode) {
+      analysisGameEndText = 'Game over — draw';
+      currentBestMove = null;
+      drawBestMoveOverlay();
+      render();
+      refreshAnalysis(true);
+      return true;
+    }
+
     render();
     document.getElementById('gameOverTitle').textContent = 'DRAW';
     document.getElementById('gameOverMsg').textContent = msg;
@@ -2045,6 +2399,16 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     invalidateAIRequest();
     gameOver = true;
     setOnlineControlsVisible(false);
+
+    if (analysisMode) {
+      analysisGameEndText = `${w === 'blue' ? 'Blue' : 'Red'} wins`;
+      currentBestMove = null;
+      drawBestMoveOverlay();
+      render();
+      refreshAnalysis(true);
+      return;
+    }
+
     render();
     const isPlayer = gameMode==='pvp' || w===playerSide;
     document.getElementById('gameOverTitle').textContent = isPlayer ? (gameMode==='pvp'?`${w.toUpperCase()} VICTORY!`:'YOU WIN!') : 'YOU LOST!';
@@ -2085,6 +2449,8 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     const actionSig = curLastActionPos ? JSON.stringify(curLastActionPos) : null;
     const isNewAction = !!actionSig && actionSig !== lastAnimatedActionSig;
     lastAnimatedActionSig = actionSig;
+
+    if(analysisMode) drawBestMoveOverlay();
 
     const statusEl = document.getElementById('statusBar');
     
@@ -2142,6 +2508,18 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
         if(p) {
           const el=document.createElement('div'); el.className=`piece ${p.player}`; el.textContent=SYMBOLS[p.type];
           if(isNewAction && isLandingCell) el.classList.add(curLastActionPos.captured ? 'piece-captured' : 'piece-landed');
+
+          // In analysis mode, attach the quality mark to the landing piece for this move.
+          const qualityIndex = isHistory ? viewHistoryIndex : (moveHistory.length - 1);
+          const q = analysisMode && isLandingCell && qualityIndex >= 0 ? moveQuality[qualityIndex] : null;
+          if(q && q.symbol) {
+            const mark = document.createElement('span');
+            mark.className = `move-quality-symbol q-${q.cls}`;
+            mark.textContent = q.symbol;
+            mark.title = q.label;
+            el.appendChild(mark);
+          }
+
           cell.appendChild(el);
         }
         cell.addEventListener('click', () => handleCellClick(r,c));
