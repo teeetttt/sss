@@ -3,8 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://unpkg.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https: wss:; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'none'">
   <title>SSS - Shear, Sheet, Stone</title>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <link rel="icon" type="image/svg+xml" sizes="any" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✂️</text></svg>">
@@ -1644,85 +1642,6 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   let lastAnimatedActionSig = null; // guards piece/cell animations so they only replay on an actual new move, not every re-render
   let peer = null, peerConn = null, isOnlineHost = false;
   let chatOpen = false, unreadChatCount = 0, onlineGameEndedByAbandonment = false;
-
-  // ================= ONLINE SECURITY LAYER =================
-  // IMPORTANT: browser code is never a trusted security boundary. DevTools can modify
-  // any variable/function in this page. These checks are therefore defensive validation
-  // against malformed/cheating network messages, not anti-DevTools protection.
-  const ONLINE_SECURITY = Object.freeze({
-    MAX_CHAT_LENGTH: 240,
-    MAX_MESSAGE_BYTES: 8192,
-    MAX_MOVES_PER_SECOND: 4,
-    PROTOCOL_VERSION: 2
-  });
-  let onlineMoveSeq = 0;
-  let lastRemoteMoveSeq = 0;
-  let remoteMessageTimes = [];
-  let onlineSecurityStrikes = 0;
-  let onlineExpectedPeerSide = null;
-
-  function otherSide(side) { return side === 'blue' ? 'red' : 'blue'; }
-
-  function isBoardCoord(v) {
-    return !!v && Number.isInteger(v.r) && Number.isInteger(v.c) &&
-      v.r >= 0 && v.r < 9 && v.c >= 0 && v.c < 9;
-  }
-
-  function isSafePieceType(v) {
-    return v === 'rock' || v === 'paper' || v === 'scissors';
-  }
-
-  function isWellFormedAction(a) {
-    if (!a || typeof a !== 'object' || (a.type !== 'move' && a.type !== 'drop')) return false;
-    if (a.type === 'move') return isBoardCoord(a.from) && isBoardCoord(a.to);
-    return isSafePieceType(a.pieceType) && isBoardCoord(a.to);
-  }
-
-  function validateOnlineAction(a, actor) {
-    if (gameMode !== 'online' || gameOver || !isWellFormedAction(a)) return false;
-    if (turn !== actor) return false;
-
-    if (a.type === 'move') {
-      const src = board[a.from.r] && board[a.from.r][a.from.c];
-      if (!src || src.player !== actor) return false;
-      return getValidMoves(a.from.r, a.from.c).some(m => m.r === a.to.r && m.c === a.to.c);
-    }
-
-    if (!hands[actor] || !hands[actor].includes(a.pieceType)) return false;
-    return getValidDropPositions().some(m => m.r === a.to.r && m.c === a.to.c);
-  }
-
-  function noteOnlineSecurityViolation(reason) {
-    onlineSecurityStrikes++;
-    console.warn('[SSS security] rejected online message:', reason);
-    if (onlineSecurityStrikes >= 5) {
-      try { if (peerConn) peerConn.close(); } catch(e) {}
-      showToast('Connection closed: invalid network messages.', 'error');
-    }
-  }
-
-  function acceptRemoteRateLimited() {
-    const now = Date.now();
-    remoteMessageTimes = remoteMessageTimes.filter(t => now - t < 1000);
-    if (remoteMessageTimes.length >= ONLINE_SECURITY.MAX_MOVES_PER_SECOND) {
-      noteOnlineSecurityViolation('rate limit');
-      return false;
-    }
-    remoteMessageTimes.push(now);
-    return true;
-  }
-
-  function serializedMessageSize(d) {
-    try { return new Blob([JSON.stringify(d)]).size; } catch(e) { return ONLINE_SECURITY.MAX_MESSAGE_BYTES + 1; }
-  }
-
-  function resetOnlineSecurityState() {
-    onlineMoveSeq = 0;
-    lastRemoteMoveSeq = 0;
-    remoteMessageTimes = [];
-    onlineSecurityStrikes = 0;
-    onlineExpectedPeerSide = null;
-  }
   const audioEl = document.getElementById('bgmAudio');
 
   let moveHistory = [];
@@ -1865,7 +1784,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     if(!input) return;
     const text=input.value.trim();
     if(!text) return;
-    peerConn.send({v:ONLINE_SECURITY.PROTOCOL_VERSION, type:'CHAT', player:playerSide, text:text.slice(0,240)});
+    peerConn.send({type:'CHAT', text:text.slice(0,240)});
     appendChatMessage(playerSide, text.slice(0,240), true);
     input.value='';
   }
@@ -1900,7 +1819,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     peer.on('open', id => { document.getElementById('roomCodeDisplay').value = id; });
     peer.on('connection', conn => {
       if(peerConn && peerConn.open) return;
-      peerConn = conn; setupPeerListeners(); isOnlineHost = true; playerSide = 'blue'; onlineExpectedPeerSide = 'red'; resetOnlineSecurityState(); gameMode = 'online';
+      peerConn = conn; setupPeerListeners(); isOnlineHost = true; playerSide = 'blue'; gameMode = 'online';
       conn.on('open', () => {
         hideAllOverlays();
         setOnlineControlsVisible(true);
@@ -1926,8 +1845,6 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
       peerConn = conn;
       isOnlineHost = false;
       playerSide = 'red';
-      onlineExpectedPeerSide = 'blue';
-      resetOnlineSecurityState();
       gameMode = 'online';
       setupPeerListeners();
       showToast('Connecting to room...', 'success');
@@ -1976,80 +1893,26 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   }
 
   function setupPeerListeners() {
-    if(!peerConn) return;
     peerConn.on('data', d => {
-      if(gameMode !== 'online' || !d || typeof d !== 'object' || typeof d.type !== 'string') return;
-
-      if (serializedMessageSize(d) > ONLINE_SECURITY.MAX_MESSAGE_BYTES) {
-        noteOnlineSecurityViolation('oversized message');
-        return;
-      }
-
-      if(d.type === 'MOVE') {
-        // Only the opponent may make the remote move, and it must be the next sequence number.
-        if (d.v !== ONLINE_SECURITY.PROTOCOL_VERSION ||
-            d.player !== onlineExpectedPeerSide ||
-            !Number.isSafeInteger(d.seq) ||
-            d.seq !== lastRemoteMoveSeq + 1 ||
-            !acceptRemoteRateLimited() ||
-            !validateOnlineAction(d.action, onlineExpectedPeerSide)) {
-          noteOnlineSecurityViolation('invalid MOVE');
-          return;
-        }
-        lastRemoteMoveSeq = d.seq;
-        applyRemoteMove(d.action, onlineExpectedPeerSide);
-      }
-      else if(d.type === 'RESTART') {
-        // A restart must come from the opponent and cannot be injected with arbitrary fields.
-        if (d.v !== ONLINE_SECURITY.PROTOCOL_VERSION || d.player !== onlineExpectedPeerSide) {
-          noteOnlineSecurityViolation('invalid RESTART');
-          return;
-        }
-        initGame();
-      }
-      else if(d.type === 'RESIGN') {
-        if (d.v !== ONLINE_SECURITY.PROTOCOL_VERSION || d.player !== onlineExpectedPeerSide || gameOver) {
-          noteOnlineSecurityViolation('invalid RESIGN');
-          return;
-        }
-        endGame(playerSide, `${d.player==='blue'?'Blue':'Red'} resigned.`);
-      }
-      else if(d.type === 'CHAT') {
-        if(d.v !== ONLINE_SECURITY.PROTOCOL_VERSION || d.player !== onlineExpectedPeerSide ||
-            typeof d.text !== 'string' || d.text.length > ONLINE_SECURITY.MAX_CHAT_LENGTH) {
-          noteOnlineSecurityViolation('invalid CHAT');
-          return;
-        }
-        receiveChatMessage(d.text);
-      }
-      else if(d.type === 'ABANDONED') {
-        if(d.v !== ONLINE_SECURITY.PROTOCOL_VERSION || d.player !== onlineExpectedPeerSide) {
-          noteOnlineSecurityViolation('invalid ABANDONED');
-          return;
-        }
-        if(!gameOver && !onlineGameEndedByAbandonment) {
+      if(!d || !d.type) return;
+      if(d.type==='MOVE') applyRemoteMove(d.action);
+      else if(d.type==='RESTART') initGame();
+      else if(d.type==='RESIGN') endGame(playerSide, `${d.player==='blue'?'Blue':'Red'} resigned.`);
+      else if(d.type==='CHAT') receiveChatMessage(d.text);
+      else if(d.type==='ABANDONED') {
+        if(gameMode==='online' && !gameOver && !onlineGameEndedByAbandonment) {
           onlineGameEndedByAbandonment=true;
           endGame(playerSide, 'Opponent abandoned game.');
         }
       }
-      else if(d.type === 'DRAW_OFFER') {
-        if (d.v !== ONLINE_SECURITY.PROTOCOL_VERSION || d.player !== onlineExpectedPeerSide || gameOver) {
-          noteOnlineSecurityViolation('invalid DRAW_OFFER');
-          return;
-        }
-        document.getElementById('drawOfferScreen').classList.remove('hidden');
+      else if(d.type==='DRAW_OFFER') {
+        if(!gameOver) document.getElementById('drawOfferScreen').classList.remove('hidden');
       }
-      else if(d.type === 'DRAW_RESPONSE') {
-        if (d.v !== ONLINE_SECURITY.PROTOCOL_VERSION || d.player !== onlineExpectedPeerSide ||
-            typeof d.accepted !== 'boolean' || gameOver) {
-          noteOnlineSecurityViolation('invalid DRAW_RESPONSE');
-          return;
-        }
-        if(d.accepted) endDraw('Draw by agreement.');
-        else showToast('Draw offer declined.', 'error');
+      else if(d.type==='DRAW_RESPONSE') {
+        if(d.accepted && !gameOver) endDraw('Draw by agreement.');
+        else if(!gameOver) showToast('Draw offer declined.', 'error');
       }
     });
-
     peerConn.on('close', () => {
       if(gameMode==='online' && !gameOver && !onlineGameEndedByAbandonment) {
         onlineGameEndedByAbandonment = true;
@@ -2059,29 +1922,17 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
       setOnlineControlsVisible(false);
     });
   }
-
-  function sendOnlineMove(action) {
-    if(peerConn && gameMode==='online' && peerConn.open && validateOnlineAction(action, playerSide)) {
-      onlineMoveSeq++;
-      peerConn.send({
-        v: ONLINE_SECURITY.PROTOCOL_VERSION,
-        type:'MOVE',
-        player: playerSide,
-        seq: onlineMoveSeq,
-        action
-      });
-    }
-  }
+  function sendOnlineMove(action) { if(peerConn && gameMode==='online' && peerConn.open) peerConn.send({type:'MOVE', action}); }
   window.addEventListener('beforeunload', () => {
     if(gameMode==='online' && !gameOver && peerConn && peerConn.open) {
-      try { peerConn.send({v:ONLINE_SECURITY.PROTOCOL_VERSION, type:'ABANDONED', player:playerSide}); } catch(e) {}
+      try { peerConn.send({type:'ABANDONED'}); } catch(e) {}
     }
   });
 
   function resignOnlineGame() {
     if(gameMode!=='online' || gameOver || !peerConn || !peerConn.open) return;
     const winner = playerSide === 'blue' ? 'red' : 'blue';
-    peerConn.send({v:ONLINE_SECURITY.PROTOCOL_VERSION, type:'RESIGN', player:playerSide});
+    peerConn.send({type:'RESIGN', player:playerSide});
     endGame(winner, `${playerSide==='blue'?'Blue':'Red'} resigned.`);
   }
 
@@ -2094,14 +1945,14 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
 
   function offerDraw() {
     if(gameMode!=='online' || gameOver || !peerConn || !peerConn.open) return;
-    peerConn.send({v:ONLINE_SECURITY.PROTOCOL_VERSION, type:'DRAW_OFFER', player:playerSide});
+    peerConn.send({type:'DRAW_OFFER'});
     showToast('Draw offer sent.', 'success');
   }
 
   function respondToDraw(accepted) {
     document.getElementById('drawOfferScreen').classList.add('hidden');
     if(gameMode!=='online' || gameOver || !peerConn || !peerConn.open) return;
-    peerConn.send({v:ONLINE_SECURITY.PROTOCOL_VERSION, type:'DRAW_RESPONSE', accepted, player:playerSide});
+    peerConn.send({type:'DRAW_RESPONSE', accepted});
     if(accepted) endDraw('Draw by agreement.');
     else showToast('Draw offer declined.', 'error');
   }
@@ -2114,7 +1965,7 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
   function closeTutorial() { document.getElementById('tutorialContentScreen').classList.add('hidden'); initGame(); }
   function hideAllOverlays() { document.querySelectorAll('.screen-overlay').forEach(el => el.classList.add('hidden')); }
   function showStartScreen() {
-    invalidateAIRequest(); clearEffects(); document.getElementById('drawOfferScreen').classList.add('hidden'); closeOnlineChat(); clearChatUI(); if(peer) peer.destroy(); peer=null; peerConn=null; resetOnlineSecurityState(); gameMode='pvp'; onlineGameEndedByAbandonment=false; setOnlineControlsVisible(false); updateMainMenuVisibility(); hideAllOverlays(); document.getElementById('startScreen').classList.remove('hidden');
+    invalidateAIRequest(); clearEffects(); document.getElementById('drawOfferScreen').classList.add('hidden'); closeOnlineChat(); clearChatUI(); if(peer) peer.destroy(); peer=null; peerConn=null; gameMode='pvp'; onlineGameEndedByAbandonment=false; setOnlineControlsVisible(false); updateMainMenuVisibility(); hideAllOverlays(); document.getElementById('startScreen').classList.remove('hidden');
     analysisMode = false; priorEval = null; currentBestMove = null; analysisGameEndText = ''; analysisSeq++;
     document.getElementById('analysisPanel').classList.remove('visible');
   }
@@ -2444,29 +2295,10 @@ const workerCode = `  // SSS TITAN ENGINE v8 — deep tactical / multi-PV anti-b
     render();
   }
 
-  function executeLocalAction(a) {
-    if(gameMode === 'online') {
-      if(!validateOnlineAction(a, playerSide)) {
-        showToast('Invalid move rejected.', 'error');
-        return;
-      }
-      sendOnlineMove(a);
-    }
-    applyActionToBoard(a);
-  }
-
-  function applyRemoteMove(a, actor) {
-    if(gameMode !== 'online' || !validateOnlineAction(a, actor)) {
-      noteOnlineSecurityViolation('remote action failed rule validation');
-      return false;
-    }
-    applyActionToBoard(a);
-    return true;
-  }
+  function executeLocalAction(a) { if(gameMode==='online') sendOnlineMove(a); applyActionToBoard(a); }
+  function applyRemoteMove(a) { applyActionToBoard(a); }
 
   function applyActionToBoard(a) {
-    // This function is intentionally not the trust boundary for online play.
-    // Online callers must pass validateOnlineAction() first.
     const actP = turn;
     const isCapture = a.type==='move' && !!board[a.to.r][a.to.c];
     const resetsQuietCount = isCapture || a.type==='drop';
